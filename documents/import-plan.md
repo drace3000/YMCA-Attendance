@@ -66,3 +66,4 @@ on conflict do nothing;
 - Multi-instructor rows (e.g., `JENN W/ ROBERT`) should create multiple `session_instructors` links.
 - `pin` is optional; you can bulk-assign later if needed.
 
+

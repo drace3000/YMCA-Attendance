@@ -20,3 +20,4 @@
 - Mapping guide from `GroupX_TM_MonSun_fixed.csv` to the schema (time parsing fixes, instructor splitting, schedule assignment).
 - Outline of manager UI flows: clone previous month to new month, adjust sessions/instructors, publish, export.
 
+

@@ -44,3 +44,4 @@ This documents the flow we used to load the September schedule into Supabase, in
 - `class_sessions`: 124 rows for September schedule.
 - `session_instructors`: 129 links.
 
+
