@@ -1,0 +1,125 @@
+﻿Day,Time,Class,LocationCode,LocationName,Instructor
+Monday,5:15am-6:00am,BODYCOMBAT™,S,Studio,KATHY F
+Monday,5:30am-6:00am,GRIT - STRENGTH™,SPC,Sports Performance Center,DANIELLE B
+Monday,7:15am-7:45am,GRIT - STRENGTH™,SPC,Sports Performance Center,MELANIE
+Monday,8:00am-8:45am,UPBEAT PILATES™,MB,Mindbody,JADA B
+Monday,8:15am-9:00am,TOTAL BODY STRONG,S,Studio,CAROL
+Monday,8:35am-9:20am,AQUA CIRCUIT,LP,Large Pool,RON
+Monday,9:00am-10:00am,ACTIVE YOGA,MB,Mindbody,SUSAN
+Monday,9:15am-10:00am,CARDIO DANCE,S,Studio,CAROL
+Monday,9:15am-10:15am,GROUP CYCLE,C,Cycle Stadium,LISA BA
+Monday,9:30am-10:15am,AQUAFIT,EP,Pool,RON
+Monday,10:15am-11:00am,AQUA IN MOTION,FP,Family Pool,SAM R
+Monday,10:15am-11:15am,BODYBALANCE™,MB,Mindbody,DANIELLE
+Monday,10:15am-11:00am,UPBEAT BARRE™,S,Studio,TIA
+Monday,10:30am-11:15am,SILVERSNEAKERS YOGA,FG,Family Gym,TESS
+Monday,4:15pm-5:15pm,UPBEAT PILATES™,MB,Mindbody,GIL
+Monday,4:30pm-5:30pm,BODYCOMBAT™,S,Studio,HEATHER R
+Monday,5:30pm-6:30pm,ACTIVE YOGA,MB,Mindbody,KIM S
+Monday,5:45pm-6:15pm,Les Mills CORE™,S,Studio,HEATHER R
+Monday,6:00pm-7:00pm,GROUP CYCLE,C,Cycle Stadium,MEREDITH
+Monday,6:30pm-7:30pm,BODYPUMP™,S,Studio,JENN W
+Monday,6:45pm-7:30pm,WERQ™,MB,Mindbody,WENDI
+Monday,7:45pm-8:15pm,BODYBALANCE™,S,Studio,JENN W
+Monday,11:30pm-11:59pm,GENTLE YOGA,MB,Mindbody,JESS G
+Monday,11:30pm-11:59pm,SILVERSNEAKERS ® CIRCUIT,FG,Family Gym,SAM R
+Tuesday,5:15am-6:15am,BODYPUMP™,S,Studio,MELANIE
+Tuesday,5:30am-6:15am,BOOTCAMP,SPC,Sports Performance Center,MIKEY
+Tuesday,5:45am-6:45am,GROUP CYCLE,C,Cycle Stadium,KARIN
+Tuesday,8:30am-9:15am,CARDIO DANCE,MB,Mindbody,SAM R
+Tuesday,8:35am-9:20am,AQUAFIT,EP,Pool,CHAR
+Tuesday,9:00am-9:45am,UPBEAT BARRE™,S,Studio,SARA
+Tuesday,9:15am-10:00am,Les Mills RPM™,C,Cycle Stadium,ADRIANA
+Tuesday,9:30am-10:15am,AQUA ZUMBA®,EP,Pool,ALISA
+Tuesday,9:30am-10:15am,PILATES,MB,Mindbody,LAURIE
+Tuesday,10:00am-11:00am,BODYCOMBAT™,S,Studio,DANIELLE
+Tuesday,10:30am-11:15am,FEELING FIT,FG,Family Gym,SAM R
+Tuesday,4:15pm-5:15pm,ACTIVE YOGA,MB,Mindbody,MEGAN
+Tuesday,5:15pm-6:15pm,BODYCOMBAT™,S,Studio,KELLY M
+Tuesday,5:30pm-6:30pm,GENTLE YOGA,MB,Mindbody,SANDY P
+Tuesday,5:30pm-6:15pm,Les Mills RPM™,C,Cycle Stadium,JAYME
+Tuesday,6:30pm-7:30pm,BODYPUMP™,S,Studio,PIERCE
+Tuesday,6:45pm-7:45pm,ZUMBA®,MB,Mindbody,NANETTE
+Tuesday,11:00am-12:00pm,GENTLE YOGA,MB,Mindbody,SUSAN
+Tuesday,11:15am-12:00pm,UPBEAT LIFT™,S,Studio,KRISTY H
+Tuesday,11:30am-12:15pm,SILVERSNEAKERS YOGA,FG,Family Gym,JESS G
+Wednesday,5:30am-6:00am,GRIT - ATHLETIC™,SPC,Sports Performance Center,MIKEY
+Wednesday,5:45am-6:45am,ACTIVE YOGA,MB,Mindbody,JOAN
+Wednesday,6:15am-7:00am,UPBEAT LIFT™,S,Studio,GIL G
+Wednesday,8:00am-8:45am,HIGH FITNESS®,MB,Mindbody,GIL G
+Wednesday,8:15am-9:00am,TRX BODY BLAST®,S,Studio,CAROL
+Wednesday,8:35am-9:20am,AQUAFIT,LP,Large Pool,ANDREA K
+Wednesday,9:00am-10:00am,ACTIVE YOGA,MB,Mindbody,JOAN
+Wednesday,9:15am-10:15am,GROUP CYCLE,C,Cycle Stadium,MINDY
+Wednesday,9:15am-10:00am,STEP-INTERVAL,S,Studio,CAROL
+Wednesday,9:30am-10:15am,AQUAFIT,LP,Large Pool,RON
+Wednesday,10:15am-11:15am,BODYPUMP™,S,Studio,ROBERT
+Wednesday,10:15am-11:15am,PILATES,MB,Mindbody,BARB D
+Wednesday,10:30am-11:15am,SILVERSNEAKERS YOGA,FG,Family Gym,TESS
+Wednesday,4:15pm-5:15pm,UPBEAT PILATES,MB,Mindbody,ANNA B
+Wednesday,4:30pm-5:30pm,BODYCOMBAT™,S,Studio,KATHY F
+Wednesday,5:30pm-6:30pm,ACTIVE YOGA,MB,Mindbody,KIM S
+Wednesday,5:30pm-6:00pm,GRIT - STRENGTH™,SPC,Sports Performance Center,MIKEY
+Wednesday,5:45pm-6:15pm,Les Mills CORE™,S,Studio,HEATHER R
+Wednesday,6:00pm-7:00pm,GROUP CYCLE,C,Cycle Stadium,KIM L
+Wednesday,6:30pm-7:15pm,BARRE,S,Studio,HEATHER R
+Wednesday,6:45pm-7:45pm,TAI CHI,MB,Mindbody,KELLY N
+Wednesday,11:30pm-11:59pm,BODYBALANCE,S,Studio,JESS G
+Wednesday,11:30pm-11:59pm,SILVERSNEAKERS ® CIRCUIT,FG,Family Gym,TESS
+Thursday,5:15am-6:15am,BODYPUMP™,S,Studio,MELANIE
+Thursday,5:30am-6:15am,BOOTCAMP,SPC,Sports Performance Center,MIKEY
+Thursday,8:30am-9:15am,UPBEAT BARRE™,MB,Mindbody,TIA
+Thursday,8:35am-9:20am,AQUAFIT,EP,Pool,CHAR
+Thursday,9:00am-9:45am,CARDIO DANCE,S,Studio,LISA B
+Thursday,9:15am-10:00am,Les Mills RPM™,C,Cycle Stadium,IRINA
+Thursday,9:30am-10:15am,AQUAFIT,EP,Pool,SAM R
+Thursday,9:30am-10:15am,PILATES,MB,Mindbody,LAURIE
+Thursday,10:00am-11:00am,BODYCOMBAT™,S,Studio,DANIELLE
+Thursday,10:15am-11:00am,SILVER CYCLE,C,Cycle Stadium,SUNNY
+Thursday,10:30am-11:15am,FEELING FIT,FG,Family Gym,SAM R
+Thursday,4:15pm-5:15pm,BODYBALANCE™,MB,Mindbody,BRENDA
+Thursday,5:30pm-6:30pm,GENTLE YOGA,MB,Mindbody,ANTHONY
+Thursday,5:30pm-6:15pm,Les Mills RPM™,C,Cycle Stadium,ROBERT
+Thursday,5:30pm-6:15pm,WERQ™,S,Studio,LAURA
+Thursday,6:30pm-7:30pm,BODYPUMP™,S,Studio,JENN W
+Thursday,11:00am-12:00pm,GENTLE YOGA,MB,Mindbody,JOAN
+Thursday,11:15am-12:00pm,UPBEAT LIFT™,S,Studio,KRISTY H
+Thursday,11:30am-12:15pm,SILVERSNEAKERS YOGA,FG,Family Gym,JESS G
+Friday,5:30am-6:00am,GRIT - CARDIO™,SPC,Sports Performance Center,DANIELLE B
+Friday,5:45am-6:45am,ACTIVE YOGA,MB,Mindbody,JOAN
+Friday,6:15am-7:00am,GROUP CYCLE,C,Cycle Stadium,JACKIE P
+Friday,8:00am-9:45am,UPBEAT PILATES™,MB,Mindbody,JADA B
+Friday,8:15am-9:00am,TOTAL BODY STRONG,S,Studio,CAROL
+Friday,9:00am-10:00am,GENTLE YOGA,MB,Mindbody,EVA
+Friday,9:15am-10:00am,CARDIO DANCE,S,Studio,CAROL
+Friday,9:15am-10:00am,Les Mills RPM™,C,Cycle Stadium,KIM K
+Friday,9:30am-10:15am,AQUA CIRCUIT,EP,Pool,RON
+Friday,10:15am-11:15am,ACTIVE YOGA,MB,Mindbody,EVA
+Friday,10:15am-11:00am,AQUA IN MOTION,FP,Family Pool,SAM R
+Friday,10:15am-11:15am,BODYPUMP™,S,Studio,DANIELLE
+Friday,10:30am-11:15am,SILVERSNEAKERS YOGA,FG,Family Gym,JULES B
+Friday,11:30am-12:15pm,SILVERSNEAKERS CLASSIS,FG,Family Gym,TESS/SAM R
+Friday,4:15pm-5:00pm,UPBEAT BARRE,S,Studio,OLGA
+Friday,4:30pm-5:30pm,POWER YOGA,MB,Mindbody,EVA
+Friday,5:15pm-6:15pm,BODYPUMP™,S,Studio,HEATHER R
+Friday,5:45pm-6:45pm,CARDIO DANCE,MB,Mindbody,BRIT C
+Friday,11:30am-12:15pm,ZUMBA GOLD,S,Studio,JOEL S
+Saturday,7:15am-7:45am,GRIT - CARDIO™,SPC,Sports Performance Center,MIKEY
+Saturday,8:00am-9:00am,BODYPUMP™,S,Studio,JENN W
+Saturday,8:45am-9:45am,BODYBALANCE™,MB,Mindbody,BRENDA
+Saturday,9:00am-10:00am,GROUP CYCLE,C,Cycle Stadium,MEGHAN
+Saturday,9:15am-10:00am,STEP-CARDIO,S,Studio,FRIEDA
+Saturday,10:00am-11:00am,BODYCOMBAT™,MB,Mindbody,DANIELLE
+Saturday,10:15am-11:15am,ZUMBA®,S,Studio,NANETTE
+Saturday,11:15am-12:15pm,ACTIVE YOGA,MB,Mindbody,JULIE
+Saturday,11:30am-12:30pm,TAI CHI,S,Studio,KELLY N
+Sunday,8:15am-9:15am,GROUP CYCLE,C,Cycle Stadium,ERIN
+Sunday,8:30am-9:15am,UPBEAT BARRE™,S,Studio,GIL
+Sunday,9:15am-10:15am,POWER YOGA,MB,Mindbody,EVA
+Sunday,9:30am-10:30am,BODYPUMP™,S,Studio,JENN W/ ROBERT
+Sunday,10:30am-11:30am,ACTIVE YOGA,MB,Mindbody,EVA
+Sunday,10:30am-11:15am,Les Mills RPM™,C,Cycle Stadium,ROBERT/ JAYME
+Sunday,10:45am-11:15am,Les Mills CORE™,S,Studio,JENN W
+Sunday,12:45pm-1:30pm,UPBEAT LIFT™,S,Studio,SAM R
+Sunday,11:30am-12:30pm,ZUMBA®,S,Studio,SAM R/SHELLEY
+Sunday,11:45am-12:45pm,BODYCOMBAT™,MB,Mindbody,VANESSA/KRISTA
