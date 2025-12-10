@@ -1,25 +1,23 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Picker } from '@react-native-picker/picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  KeyboardAvoidingView,
-  Platform,
+    Image,
+    Modal,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
-import { router } from 'expo-router';
-import Constants from 'expo-constants';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
-import { Picker } from '@react-native-picker/picker';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import ThemedDialog from '@/components/themed-dialog';
+import { checkNicknameExists } from '@/lib/attendance';
 import { supabase } from '@/lib/supabase';
-
-WebBrowser.maybeCompleteAuthSession();
 
 type Branch = {
   id: string;
@@ -34,7 +32,7 @@ type Branch = {
 };
 
 type ActionButtonProps = {
-  title: string;
+  title: React.ReactNode;
   onPress: () => void;
   disabled?: boolean;
   variant?: 'primary' | 'secondary';
@@ -78,14 +76,67 @@ const ActionButton = ({
 export default function OnboardingScreen() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
+  const [showBranchList, setShowBranchList] = useState(false);
+  const [showBranchDetails, setShowBranchDetails] = useState(false);
   const [nickname, setNickname] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [hasNickname, setHasNickname] = useState<boolean | null>(null);
+  const [nicknameExists, setNicknameExists] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'form' | 'code'>('form');
+  const [code, setCode] = useState('');
+  const [codeStatus, setCodeStatus] = useState('');
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [hideContent, setHideContent] = useState(false);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; buttons?: DialogButton[] }>({
+    visible: false,
+    title: '',
+    message: '',
+    buttons: undefined,
+  });
   const claimingRef = useRef(false);
+  const nicknameInputRef = useRef<TextInput>(null);
+  const firstNameInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<KeyboardAwareScrollView>(null);
+  const resendTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  type DialogButton = { label: string; onPress?: () => void; variant?: 'primary' | 'secondary' };
+  const showDialog = (title: string, message: string, buttons?: DialogButton[]) => {
+    setDialog({
+      visible: true,
+      title,
+      message,
+      buttons: buttons?.length ? buttons : undefined,
+    });
+  };
+
+  const closeDialog = (button?: DialogButton) => {
+    button?.onPress?.();
+    setDialog({ visible: false, title: '', message: '', buttons: undefined });
+  };
+  const navigateToLogin = () => {
+    setDetailsModalVisible(false);
+    router.replace('/auth/login');
+  };
+  const pendingEmailKey = useMemo(() => {
+    if (!branchId || !nickname.trim()) return null;
+    return `pending-email:${branchId}:${nickname.trim().toUpperCase()}`;
+  }, [branchId, nickname]);
+  const pendingClaimContextKey = 'pending-claim-context';
+  const lastClaimKey = 'last-attendance-claim';
+  const congratsEndpoint = process.env.EXPO_PUBLIC_CONGRATS_ENDPOINT;
+
+  useEffect(() => {
+    return () => {
+      if (resendTimerRef.current) {
+        clearInterval(resendTimerRef.current);
+        resendTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -99,12 +150,50 @@ export default function OnboardingScreen() {
   }, []);
 
   useEffect(() => {
+    setNicknameExists(false);
+  }, [nickname, branchId]);
+
+  useEffect(() => {
+    if (!hideContent && scrollViewRef.current) {
+      // Reset scroll position when content is restored, but don't focus input (no keyboard)
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToPosition(0, 0, true);
+      }, 100);
+    }
+  }, [hideContent]);
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.user) {
+        // If already authenticated, go straight to attendance (try stored claim if available)
+        try {
+          const stored = await AsyncStorage.getItem(lastClaimKey);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed?.branchId && parsed?.nickname) {
+              router.replace({
+                pathname: '/attendance',
+                params: { branchId: parsed.branchId, nickname: parsed.nickname },
+              });
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load last attendance claim', err);
+        }
+        router.replace('/attendance');
+      }
+    };
+    checkSession();
+  }, []);
+
+  useEffect(() => {
     const loadBranches = async () => {
       const { data, error } = await supabase
         .from('branches')
         .select('id, code, name, address, city, state, zip, phone, description');
       if (error) {
-        Alert.alert('Error loading branches', error.message);
+        showDialog('Error loading branches', error.message);
         return;
       }
       setBranches(data);
@@ -119,11 +208,7 @@ export default function OnboardingScreen() {
   const selectedBranch = useMemo(() => branches.find((b) => b.id === branchId), [branches, branchId]);
 
   const knownNicknameExists = (branch: Branch | undefined, nick: string) => {
-    const n = nick.trim().toUpperCase();
-    if (!branch) return false;
-    const code = branch.code ?? '';
-    // Temporary test fallback: assume EVA exists for Eastside.
-    if (code === 'eastside_family_ymca' && n === 'EVA') return true;
+    // No hardcoded nicknames; rely on RPC or actual data.
     return false;
   };
 
@@ -133,150 +218,228 @@ export default function OnboardingScreen() {
     return `${found.name ?? 'Branch'}`;
   }, [branches, branchId]);
 
+  const nicknameDisplay = nickname.trim().toUpperCase();
+
   const requireFields = () => {
     if (!branchId) {
-      Alert.alert('Please select a branch');
+      showDialog('Please select a branch', 'Choose your branch to continue.');
       return false;
     }
     if (!nickname.trim()) {
-      Alert.alert('Nickname required', 'Enter your schedule nickname (unique per branch).');
+      showDialog('Nickname required', 'Enter your schedule nickname (unique per branch).');
       return false;
     }
     return true;
+  };
+
+  const startResendTimer = (seconds: number) => {
+    if (resendTimerRef.current) {
+      clearInterval(resendTimerRef.current);
+    }
+    setResendCooldown(seconds);
+    resendTimerRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          if (resendTimerRef.current) {
+            clearInterval(resendTimerRef.current);
+            resendTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
   const validateNickname = async (opts?: { showSuccess?: boolean }) => {
     const showSuccess = opts?.showSuccess ?? true;
     if (!requireFields()) return false;
+    setNicknameExists(false);
     let exists: boolean | null = null;
     try {
-      const { data, error } = await supabase.rpc('nickname_exists', {
-        p_branch_id: branchId,
-        p_nickname: nickname.trim(),
-      });
-      if (error) {
-        if (error?.code !== 'PGRST202') {
-          throw error;
-        }
+      exists = await checkNicknameExists(branchId!, nickname);
+      if (exists === null) {
         // RPC missing: try known fallback for test data.
         exists = knownNicknameExists(selectedBranch, nickname);
-      } else if (typeof data === 'boolean') {
-        exists = data;
       }
     } catch (err: any) {
-      Alert.alert('Nickname check failed', err.message ?? 'Unable to check nickname');
+      showDialog('Nickname check failed', err.message ?? 'Unable to check nickname');
       return false;
     }
     if (exists === null) {
-      Alert.alert('Nickname check unavailable', 'Please try again later.');
+      showDialog('Nickname check unavailable', 'Please try again later.');
       return false;
     }
-    if (hasNickname === true && !exists) {
-      Alert.alert('Not found', 'Nickname not found for this branch.');
+    setNicknameExists(Boolean(exists));
+    if (exists) {
+      // If there is a pending email confirmation for this nickname, alert and offer actions
+      const { data: sessionData } = await supabase.auth.getSession();
+      const hasSession = Boolean(sessionData?.session?.user);
+      if (!hasSession && pendingEmailKey) {
+        try {
+          const pendingRaw = await AsyncStorage.getItem(pendingEmailKey);
+          if (pendingRaw) {
+            const pending = JSON.parse(pendingRaw);
+            if (pending?.email) {
+              showDialog(
+                'Email confirmation required',
+                `We sent a confirmation link to ${pending.email}. Open it, then return and sign in.`,
+                [
+                  {
+                    label: 'Go to Login',
+                    onPress: navigateToLogin,
+                  },
+                  {
+                    label: 'Clear pending',
+                    onPress: async () => {
+                      if (pendingEmailKey) {
+                        await AsyncStorage.removeItem(pendingEmailKey);
+                      }
+                    },
+                  },
+                ]
+              );
+              return false;
+            }
+          }
+        } catch (err) {
+          console.warn('Pending email lookup failed', err);
+        }
+      }
+    }
+    if (!exists) {
+      setHideContent(true);
+      showDialog('Nickname not found', 'We could not find that nickname for this branch. Please re-enter it.', [
+        {
+          label: 'OK',
+          onPress: () => {
+            setNickname('');
+            setHideContent(false);
+            // Focus will be handled by useEffect when hideContent becomes false
+          },
+        },
+      ]);
       return false;
     }
-    if (hasNickname === false && exists) {
-      Alert.alert('Already taken', 'Nickname already exists for this branch.');
-      return false;
-    }
-    if (hasNickname === true && exists && showSuccess) {
-      Alert.alert('Nickname found', 'Your Nickname was found continue to login.');
+    if (exists && showSuccess) {
+      setDetailsModalVisible(true);
     }
     return true;
   };
 
-  const handleEmailAuth = async () => {
+  const handleSendOtp = async () => {
     if (!requireFields()) return;
-    if (hasNickname === null) {
-      Alert.alert('Choose nickname path', 'Select whether this is an existing or new nickname.');
-      return;
+    if (!nicknameExists) {
+      const nicknameOk = await validateNickname({ showSuccess: false });
+      if (!nicknameOk) return;
     }
-    const nicknameOk = await validateNickname({ showSuccess: false });
-    if (!nicknameOk) return;
     if (!email.trim() || !password) {
-      Alert.alert('Email and password required');
+      showDialog('Email required', 'Enter your email address and password to continue.');
       return;
     }
     setLoading(true);
+    setCodeStatus('');
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password,
+      const emailNormalized = email.trim().toLowerCase();
+
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: emailNormalized,
+        options: {
+          shouldCreateUser: true,
+        },
       });
-      if (error) {
-        // If user not found, attempt signup
-        const { data: signupData, error: signupError } = await supabase.auth.signUp({
-          email: email.trim().toLowerCase(),
-          password,
-        });
-        if (signupError) {
-          throw signupError;
-        }
-        if (signupData.user) {
-          await completeOnboarding(signupData.user.id);
-        }
-      } else if (data.user) {
-        await completeOnboarding(data.user.id);
-      }
+      if (otpErr) throw otpErr;
+
+      setCodeSentTo(emailNormalized);
+      setMode('code');
+      setCodeStatus('A 6-digit code was sent to your email.');
+      setDetailsModalVisible(false);
+      startResendTimer(240);
     } catch (err: any) {
-      Alert.alert('Auth error', err.message ?? 'Unable to authenticate');
+      showDialog('Auth error', err.message ?? 'Unable to authenticate');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogle = async () => {
-    if (!requireFields()) return;
-    if (hasNickname === null) {
-      Alert.alert('Choose nickname path', 'Select whether this is an existing or new nickname.');
+  const handleVerifyCode = async () => {
+    if (!code.trim()) {
+      setCodeStatus('Enter the 6-digit code.');
       return;
     }
-    const nicknameOk = await validateNickname({ showSuccess: false });
-    if (!nicknameOk) return;
+    if (!codeSentTo) {
+      setCodeStatus('Missing email context. Go back and resend the code.');
+      return;
+    }
     setLoading(true);
+    setCodeStatus('Verifying code...');
     try {
-      const buildRedirectTo = () => {
-        const useProxy = Constants.appOwnership === 'expo';
-        if (useProxy) {
-          const slug = Constants.expoConfig?.slug ?? 'YMCA-Attendance';
-          const owner = Constants.expoConfig?.owner ?? 'anonymous';
-          return `https://auth.expo.io/@${owner}/${slug}/auth/callback`;
-        }
-        return Linking.createURL('/auth/callback');
-      };
-      const redirectTo = buildRedirectTo();
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-          queryParams: { access_type: 'offline', prompt: 'consent' },
-        },
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: codeSentTo,
+        token: code.trim(),
+        type: 'email',
       });
-      if (error) {
-        throw error;
-      }
-      if (!data?.url) {
-        throw new Error('No auth URL returned from Supabase.');
+      if (verifyErr) throw verifyErr;
+
+      // Optionally set password after OTP if provided
+      if (password.trim()) {
+        await supabase.auth.updateUser({ password: password });
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type === 'success' && result.url) {
-        const code = new URL(result.url).searchParams.get('code');
-        if (!code) {
-          throw new Error('No auth code returned from Google.');
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      const userId = sessionData.session?.user?.id;
+      if (!userId) throw new Error('No session after code verification.');
+
+      // Inform user code was accepted; proceed to complete onboarding.
+      showDialog('Code accepted', 'Completing sign-in…');
+      await completeOnboarding(userId);
+      setCodeStatus('Verified and signed in.');
+      // Try to send a congrats email via an Edge Function if configured.
+      try {
+        if (congratsEndpoint && codeSentTo) {
+          await fetch(congratsEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: codeSentTo,
+              nickname: nickname.trim(),
+            }),
+          });
         }
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) {
-          throw exchangeError;
-        }
-      } else if (result.type === 'dismiss') {
-        throw new Error('Google sign-in was dismissed.');
-      } else if (result.type === 'cancel') {
-        throw new Error('Google sign-in was cancelled.');
+      } catch (mailErr) {
+        console.warn('Congrats email failed (non-blocking)', mailErr);
       }
+      showDialog('Success', 'You are signed in.');
     } catch (err: any) {
-      Alert.alert('Google sign-in error', err.message ?? 'Unable to start Google sign-in');
+      console.warn('OTP verify failed', err);
+      setCodeStatus(err?.message ?? 'Verification failed. Check the code and try again.');
+      showDialog('Verification failed', err?.message ?? 'Check the code and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || loading) return;
+    if (!codeSentTo) {
+      setCodeStatus('Missing email context. Go back and resend from the form.');
+      return;
+    }
+    setLoading(true);
+    setCodeStatus('Resending code...');
+    try {
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        email: codeSentTo,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      if (otpErr) throw otpErr;
+      setCodeStatus('Code resent.');
+      startResendTimer(30);
+    } catch (err: any) {
+      setCodeStatus(err?.message ?? 'Resend failed.');
     } finally {
       setLoading(false);
     }
@@ -294,51 +457,155 @@ export default function OnboardingScreen() {
       if (claimError) {
         throw claimError;
       }
+      try {
+        const keys: string[] = [];
+        if (pendingEmailKey) {
+          keys.push(pendingEmailKey);
+        }
+        keys.push(pendingClaimContextKey);
+        await AsyncStorage.multiRemove(keys);
+        await AsyncStorage.setItem(
+          lastClaimKey,
+          JSON.stringify({ branchId: branchId ?? null, nickname: nickname.trim() })
+        );
+      } catch (err) {
+        console.warn('Failed to store last attendance claim', err);
+      }
       await supabase.rpc('update_last_login');
-      router.replace('/today');
+      router.replace({
+        pathname: '/attendance',
+        params: {
+          branchId: branchId ?? '',
+          nickname: nickname.trim(),
+        },
+      });
     } catch (err: any) {
-      Alert.alert('Onboarding error', err.message ?? 'Unable to claim instructor');
+      showDialog('Onboarding error', err.message ?? 'Unable to claim instructor');
     } finally {
       claimingRef.current = false;
     }
   };
 
+  if (mode === 'code') {
+    return (
+      <LinearGradient colors={['#01A490', '#0f172a']} style={styles.gradient}>
+        <SafeAreaView style={styles.safe}>
+          <KeyboardAwareScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scrollContent}
+            enableOnAndroid
+            enableAutomaticScroll
+            extraScrollHeight={100}
+            extraHeight={100}
+            keyboardOpeningTime={0}
+            enableResetScrollToCoords={false}
+            scrollToOverflowEnabled={true}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag">
+            <View style={styles.codeScreenHeader}>
+              <Text style={styles.title}>Enter 6-digit code</Text>
+              <Text style={styles.helper}>
+                We sent a code to {codeSentTo ?? 'your email'}. You have up to 4 minutes to enter it.
+              </Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              placeholder="123456"
+              value={code}
+              onChangeText={setCode}
+              maxLength={6}
+            />
+            <View style={styles.buttonRow}>
+              <ActionButton title="Verify code" onPress={handleVerifyCode} disabled={loading} />
+              <ActionButton
+                title={resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend code'}
+                onPress={handleResendCode}
+                disabled={loading || resendCooldown > 0}
+                variant="secondary"
+              />
+            </View>
+            {codeStatus ? <Text style={styles.helperSmall}>{codeStatus}</Text> : null}
+            <View style={styles.buttonRow}>
+              <ActionButton
+                title="Back"
+                variant="secondary"
+                onPress={() => {
+                  setMode('form');
+                  setCode('');
+                  setCodeStatus('');
+                  setResendCooldown(0);
+                  if (resendTimerRef.current) {
+                    clearInterval(resendTimerRef.current);
+                    resendTimerRef.current = null;
+                  }
+                }}
+              />
+            </View>
+          </KeyboardAwareScrollView>
+          <ThemedDialog
+            visible={dialog.visible}
+            title={dialog.title}
+            message={dialog.message}
+            buttons={dialog.buttons}
+            onClose={() => closeDialog()}
+          />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={80}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag">
-        <Text style={styles.title}>Instructor login</Text>
-        <Text style={styles.sectionLabel}>Do you already have a schedule nickname?</Text>
-        <View style={styles.toggleRow}>
-          <ActionButton
-            title="Yes, existing"
-            variant="secondary"
-            selected={hasNickname === true}
-            onPress={() => setHasNickname(true)}
-            style={styles.toggleButton}
-          />
-          <ActionButton
-            title="No, create new"
-            variant="secondary"
-            selected={hasNickname === false}
-            onPress={() => setHasNickname(false)}
-            style={styles.toggleButton}
-          />
-        </View>
-        <Text style={styles.helper}>
-          Existing: enter the nickname that already appears on a schedule. New: pick a new unique
-          nickname for this branch.
+    <LinearGradient colors={['#01A490', '#0f172a']} style={styles.gradient}>
+      <SafeAreaView style={styles.safe}>
+        {!detailsModalVisible && (
+          <>
+            <View style={styles.brandHeader}>
+              <Image source={require('../../assets/images/ymca-logo.png')} style={styles.brandLogo} />
+              <View style={styles.brandTextBlock}>
+                <Text style={styles.title}>
+                  Instructor onboarding
+                </Text>
+                <Text style={styles.branchText}>{selectedBranch?.name ?? 'Of the Greater Rochester Area'}</Text>
+              </View>
+            </View>
+            {!hideContent && (
+            <KeyboardAwareScrollView
+              ref={scrollViewRef}
+              style={styles.flex}
+              contentContainerStyle={styles.scrollContent}
+              enableOnAndroid
+              enableAutomaticScroll
+              extraScrollHeight={100}
+              extraHeight={100}
+              keyboardOpeningTime={0}
+              enableResetScrollToCoords={false}
+              scrollToOverflowEnabled={true}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag">
+            <Text style={styles.helper}>
+          From your schedule: <Text style={styles.prefixBold}>a.</Text> select the branch name <Text style={styles.prefixBold}>b.</Text> locate your nickname <Text style={styles.prefixBold}>c.</Text> select Check Nickname to enter your credential for signup.
         </Text>
-        <Text style={styles.sectionLabel}>Branch</Text>
+        <Text style={styles.sectionLabel}>
+          <Text style={styles.prefixBold}>a.</Text> Branch
+        </Text>
         <View style={styles.branchBox}>
-          <Text style={styles.branchText}>{branchLabel}</Text>
-          {selectedBranch && (
+          <View style={styles.branchHeaderRow}>
+            <Text style={styles.branchText}>{branchLabel}</Text>
+            <Pressable
+              style={styles.detailsAction}
+              onPress={() =>
+                setShowBranchDetails((prev) => {
+                  const next = !prev;
+                  if (!next) setShowBranchList(false);
+                  return next;
+                })
+              }
+              hitSlop={8}>
+              <Text style={styles.detailsActionText}>{showBranchDetails ? 'Hide' : 'Select'}</Text>
+            </Pressable>
+          </View>
+          {showBranchDetails && selectedBranch && (
             <View style={styles.branchDetails}>
               {selectedBranch.address ? <Text style={styles.branchLine}>{selectedBranch.address}</Text> : null}
               {(selectedBranch.city || selectedBranch.state || selectedBranch.zip) ? (
@@ -353,143 +620,308 @@ export default function OnboardingScreen() {
               ) : null}
             </View>
           )}
-          {branches.length > 1 && <Text style={styles.helper}>Select your branch below.</Text>}
-          {branches.length > 0 && (
+          {showBranchDetails && branches.length > 1 && (
+            <View style={styles.branchActions}>
+              <Text style={styles.helper}>Select your branch.</Text>
+              <Pressable
+                onPress={() => setShowBranchList((prev) => !prev)}
+                style={styles.toggleListAction}>
+                <Text style={styles.toggleListText}>{showBranchList ? 'Hide list' : 'View list'}</Text>
+              </Pressable>
+            </View>
+          )}
+          {showBranchList && branches.length > 0 && (
             <View style={styles.pickerContainer}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerHeaderText}>Choose branch</Text>
+                <Pressable onPress={() => setShowBranchList(false)} style={styles.closeAction}>
+                  <Text style={styles.closeActionText}>Close</Text>
+                </Pressable>
+              </View>
               <Picker
                 selectedValue={branchId ?? branches[0]?.id}
                 onValueChange={(val) => setBranchId(val)}
-                style={styles.picker}>
+                style={styles.picker}
+                dropdownIconColor="#facc15"
+                itemStyle={styles.pickerItem}>
                 {branches.map((b) => (
-                  <Picker.Item key={b.id} label={`${b.name ?? 'Branch'}`} value={b.id} />
+                  <Picker.Item
+                    key={b.id}
+                    label={`${branchId === b.id ? '• ' : ''}${b.name ?? 'Branch'}`}
+                    value={b.id}
+                    color={branchId === b.id ? '#0f172a' : '#1e293b'}
+                  />
                 ))}
               </Picker>
             </View>
           )}
         </View>
 
-        <Text style={styles.sectionLabel}>Nickname</Text>
+        <Text style={styles.sectionLabel}>
+          <Text style={styles.prefixBold}>b.</Text> Nickname
+        </Text>
         <TextInput
           style={styles.input}
           placeholder="Your schedule nickname"
           autoCapitalize="characters"
           value={nickname}
           onChangeText={setNickname}
+          ref={nicknameInputRef}
+          returnKeyType="done"
+          onSubmitEditing={() => validateNickname({ showSuccess: true })}
         />
         <View style={styles.buttonRow}>
-          <ActionButton title="Check nickname" onPress={validateNickname} disabled={loading} />
-        </View>
-
-        <Text style={styles.sectionLabel}>Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="First name"
-          value={firstName}
-          onChangeText={setFirstName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Last name"
-          value={lastName}
-          onChangeText={setLastName}
-        />
-
-        <Text style={styles.sectionLabel}>Email & password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <View style={styles.buttonRow}>
-          <ActionButton title="Continue with Email" onPress={handleEmailAuth} disabled={loading} />
-        </View>
-        <View style={styles.buttonRow}>
-          <ActionButton title="Continue with Google" onPress={handleGoogle} disabled={loading} />
+          <ActionButton
+            title={
+              <Text>
+                <Text style={styles.prefixBold}>c.</Text> Check Nickname
+              </Text>
+            }
+            onPress={validateNickname}
+            disabled={loading}
+          />
         </View>
         <Text style={styles.helperSmall}>
-          After sign-in, we will claim your instructor record (branch + nickname) and take you to
-          today&apos;s classes.
+          After sign-in and you have completed email confirmation you will be directed to the Attendance screen to review your classes and enter member attendance.
         </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </KeyboardAwareScrollView>
+            )}
+          </>
+        )}
+      </SafeAreaView>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={detailsModalVisible}
+        onRequestClose={() => setDetailsModalVisible(false)}>
+        <View style={styles.detailsModalWrapper}>
+          <KeyboardAwareScrollView
+            style={styles.detailsScrollView}
+            contentContainerStyle={styles.detailsBackdrop}
+            enableOnAndroid
+            enableAutomaticScroll
+            extraScrollHeight={100}
+            extraHeight={100}
+            keyboardOpeningTime={0}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag">
+            <LinearGradient colors={['#01A490', '#0f172a']} style={styles.detailsCard}>
+            <Text style={styles.detailsTitle}>Instructor details</Text>
+            <Text style={styles.detailsHelper}>
+              Please confirm your name and email so we can finish linking your account.
+            </Text>
+            {nicknameDisplay ? (
+              <View style={styles.nicknameInfo}>
+                <Text style={styles.nicknameInfoLabel}>Nick Name</Text>
+                <Text style={styles.nicknameInfoValue}>{nicknameDisplay}</Text>
+              </View>
+            ) : null}
+            <TextInput
+              style={[styles.input, styles.modalInput]}
+              placeholder="First name"
+              placeholderTextColor="rgba(248,250,252,0.6)"
+              value={firstName}
+              onChangeText={setFirstName}
+              ref={firstNameInputRef}
+            />
+            <TextInput
+              style={[styles.input, styles.modalInput]}
+              placeholder="Last name"
+              placeholderTextColor="rgba(248,250,252,0.6)"
+              value={lastName}
+              onChangeText={setLastName}
+            />
+            <TextInput
+              style={[styles.input, styles.modalInput]}
+              placeholder="Email"
+              placeholderTextColor="rgba(248,250,252,0.6)"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              style={[styles.input, styles.modalInput]}
+              placeholder="Password (optional, set after code)"
+              placeholderTextColor="rgba(248,250,252,0.6)"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            <View style={styles.detailsButtons}>
+              <Pressable
+                style={[
+                  styles.detailsPrimaryButton,
+                  loading && styles.detailsPrimaryButtonDisabled,
+                ]}
+                disabled={loading}
+                onPress={handleSendOtp}>
+                <Text style={styles.detailsPrimaryText}>
+                  {loading ? 'Processing…' : 'Send 6-digit code'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.detailsSecondaryButton, loading && styles.detailsSecondaryButtonDisabled]}
+                disabled={loading}
+                onPress={() => setDetailsModalVisible(false)}>
+                <Text style={styles.detailsSecondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+            </LinearGradient>
+          </KeyboardAwareScrollView>
+        </View>
+      </Modal>
+      <ThemedDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        buttons={dialog.buttons}
+        onClose={() => closeDialog()}
+      />
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  gradient: { flex: 1 },
   safe: { flex: 1 },
-  container: {
-    padding: 16,
+  scrollContent: {
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 240,
     gap: 12,
-    paddingBottom: 48,
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   flex: { flex: 1 },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+    paddingTop: 6,
+    paddingHorizontal: 16,
+  },
+  brandLogo: { width: 56, height: 56 },
+  brandTextBlock: { gap: 2 },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#f8fafc',
   },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
     marginTop: 8,
+    color: '#e2e8f0',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
+    borderColor: '#475569',
+    borderRadius: 8,
     padding: 10,
     fontSize: 16,
+    color: '#0f172a',
+    backgroundColor: '#f8fafc',
+  },
+  modalInput: {
+    backgroundColor: 'rgba(15,23,42,0.35)',
+    borderColor: 'rgba(248,250,252,0.25)',
+    color: '#f8fafc',
   },
   branchBox: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
-    padding: 10,
-    backgroundColor: '#f7f7f7',
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    gap: 10,
+  },
+  branchHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
   },
   branchText: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#f8fafc',
   },
   branchDetails: {
     marginTop: 6,
     gap: 2,
   },
   branchLine: {
-    color: '#444',
+    color: '#cbd5e1',
     fontSize: 14,
   },
   helper: {
     marginTop: 4,
-    color: '#666',
+    color: '#cbd5e1',
   },
+  branchActions: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailsAction: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.5)',
+    backgroundColor: 'rgba(56,189,248,0.15)',
+    minWidth: 76,
+    alignItems: 'center',
+  },
+  detailsActionText: { color: '#38bdf8', fontWeight: '600' },
+  toggleListAction: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.5)',
+    backgroundColor: 'rgba(56,189,248,0.15)',
+  },
+  toggleListText: { color: '#38bdf8', fontWeight: '600' },
   pickerContainer: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#2563eb',
-    borderRadius: 6,
+    borderColor: '#38bdf8',
+    borderRadius: 8,
     overflow: 'hidden',
+    backgroundColor: 'rgba(15,23,42,0.6)',
   },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(56,189,248,0.3)',
+  },
+  pickerHeaderText: { color: '#f8fafc', fontWeight: '600' },
+  closeAction: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.2)',
+  },
+  closeActionText: { color: '#38bdf8', fontWeight: '600' },
   picker: {
     marginTop: 0,
+    color: '#f8fafc',
   },
+  pickerItem: { color: '#0f172a' },
   helperSmall: {
     marginTop: 8,
-    color: '#777',
+    color: '#e2e8f0',
     fontSize: 12,
   },
+  prefixBold: { fontWeight: '800' },
   buttonRow: {
     marginTop: 8,
   },
@@ -508,20 +940,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#2563eb',
-    backgroundColor: '#2563eb',
+    borderColor: '#facc15',
+    backgroundColor: '#facc15',
   },
   buttonPrimary: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: '#facc15',
+    borderColor: '#facc15',
   },
   buttonSecondary: {
-    backgroundColor: '#fff',
-    borderColor: '#cbd5e1',
+    backgroundColor: 'rgba(15,23,42,0.4)',
+    borderColor: '#94a3b8',
   },
   buttonSelected: {
-    borderColor: '#2563eb',
-    backgroundColor: '#e5edff',
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56,189,248,0.15)',
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
@@ -531,15 +963,104 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#1f2937',
+    fontWeight: '700',
     fontSize: 16,
   },
   buttonTextSecondary: {
-    color: '#1f2937',
+    color: '#e2e8f0',
   },
   buttonTextDisabled: {
-    color: '#e5e7eb',
+    color: '#fef3c7',
+  },
+  detailsModalWrapper: {
+    flex: 1,
+    marginTop: 56,
+    backgroundColor: '#01A490',
+    justifyContent: 'center',
+    paddingTop: 15,
+  },
+  detailsScrollView: {
+    flexGrow: 0,
+  },
+  detailsBackdrop: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  detailsCard: {
+    width: '100%',
+    borderRadius: 28,
+    padding: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(248,250,252,0.85)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  detailsCardContent: {
+    gap: 10,
+  },
+  detailsTitle: { fontSize: 22, fontWeight: '700', color: '#fef3c7' },
+  detailsHelper: { color: '#e2e8f0', marginBottom: 4 },
+  nicknameInfo: {
+    marginTop: 4,
+    marginBottom: 2,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(248,250,252,0.35)',
+    backgroundColor: 'rgba(71,85,105,0.45)',
+  },
+  nicknameInfoLabel: {
+    color: 'rgba(248,250,252,0.7)',
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  nicknameInfoValue: {
+    color: '#fef3c7',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  detailsButtons: {
+    marginTop: 8,
+    gap: 12,
+  },
+  detailsPrimaryButton: {
+    backgroundColor: '#01A490',
+    borderRadius: 999,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  detailsPrimaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  detailsPrimaryText: { color: '#f8fafc', fontWeight: '700' },
+  detailsSecondaryButton: {
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(248,250,252,0.35)',
+    backgroundColor: 'transparent',
+  },
+  detailsSecondaryButtonDisabled: {
+    opacity: 0.5,
+  },
+  detailsSecondaryText: { color: '#a7f3d0', fontWeight: '600' },
+  codeBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.35)',
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    gap: 6,
   },
 });
 

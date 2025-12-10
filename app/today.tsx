@@ -1,16 +1,17 @@
+import ThemedDialog, { DialogButton } from '@/components/themed-dialog';
+import { supabase } from '@/lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  Button,
-  Alert,
+    ActivityIndicator,
+    FlatList,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
-import { supabase } from '@/lib/supabase';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type SessionRow = {
   session_id: string;
@@ -33,6 +34,17 @@ export default function TodayScreen() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [headcounts, setHeadcounts] = useState<Record<string, string>>({});
+  const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; buttons?: DialogButton[] }>({
+    visible: false,
+    title: '',
+    message: '',
+    buttons: undefined,
+  });
+
+  const showDialog = (title: string, message: string, buttons?: DialogButton[]) => {
+    setDialog({ visible: true, title, message, buttons });
+  };
+  const closeDialog = () => setDialog({ visible: false, title: '', message: '', buttons: undefined });
 
   useEffect(() => {
     loadSessions();
@@ -50,7 +62,7 @@ export default function TodayScreen() {
       .order('session_id');
 
     if (error) {
-      Alert.alert('Error', error.message);
+      showDialog('Error', error.message ?? 'Unable to load sessions');
       setLoading(false);
       return;
     }
@@ -85,7 +97,7 @@ export default function TodayScreen() {
       if (error) throw error;
       await loadSessions();
     } catch (err: any) {
-      Alert.alert('Save failed', err.message ?? 'Unable to update headcount');
+      showDialog('Save failed', err.message ?? 'Unable to update headcount');
     } finally {
       setSavingId(null);
     }
@@ -114,28 +126,42 @@ export default function TodayScreen() {
             }))
           }
         />
-        <Button
-          title={savingId === cs.id ? 'Saving...' : 'Save headcount'}
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          style={[styles.saveButton, savingId === cs.id ? styles.saveButtonDisabled : null]}
           disabled={savingId === cs.id}
           onPress={() => {
             const hc = Number(countValue || 0);
             updateHeadcount(cs.id, hc, cs.headcount_submitted_at);
-          }}
-        />
+          }}>
+          <Text style={styles.saveButtonText}>{savingId === cs.id ? 'Saving...' : 'Save headcount'}</Text>
+        </Pressable>
       </View>
     );
   };
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" />
-      </SafeAreaView>
+      <LinearGradient colors={['#01A490', '#052e16']} style={styles.gradient}>
+        <SafeAreaView style={styles.center}>
+          <ActivityIndicator size="large" color="#facc15" />
+        </SafeAreaView>
+      </LinearGradient>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <>
+      <ThemedDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        buttons={dialog.buttons}
+        onClose={closeDialog}
+      />
+    <LinearGradient colors={['#01A490', '#052e16']} style={styles.gradient}>
+      <SafeAreaView style={styles.safe}>
       <FlatList
         data={sessions}
         keyExtractor={(item) => item.session_id}
@@ -146,30 +172,48 @@ export default function TodayScreen() {
         onRefresh={loadSessions}
       />
     </SafeAreaView>
+    </LinearGradient>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  gradient: { flex: 1 },
   safe: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   list: { padding: 16, gap: 12 },
   card: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#fff',
-    gap: 6,
+    borderColor: 'rgba(15,23,42,0.22)',
+    borderRadius: 18,
+    padding: 18,
+    backgroundColor: '#ffffff',
+    gap: 8,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
-  className: { fontSize: 18, fontWeight: '600' },
-  meta: { color: '#555' },
+  className: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  meta: { color: '#1f2937', fontWeight: '500' },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 6,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
     padding: 10,
     fontSize: 16,
+    backgroundColor: '#fff',
   },
-  empty: { textAlign: 'center', marginTop: 40, color: '#666' },
+  empty: { textAlign: 'center', marginTop: 40, color: '#e2e8f0' },
+  saveButton: {
+    backgroundColor: '#01A490',
+    paddingVertical: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  saveButtonDisabled: { opacity: 0.6 },
+  saveButtonText: { color: '#fff', fontWeight: '700' },
 });
 

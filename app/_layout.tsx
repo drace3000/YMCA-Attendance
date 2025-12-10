@@ -1,25 +1,45 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import * as Linking from 'expo-linking';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  useEffect(() => {
+    const handle = (event: { url: string }) => {
+      if (event?.url?.includes('/oauth-callback')) {
+        router.push('/oauth-callback');
+      }
+    };
+    const sub = Linking.addEventListener('url', handle);
+    return () => sub.remove();
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/onboarding" options={{ title: 'Instructor Login' }} />
+        <Stack.Screen name="welcome" options={{ title: 'Welcome', headerShown: false }} />
+        <Stack.Screen name="oauth-callback" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/login" options={{ title: 'Sign In', headerShown: false }} />
+        <Stack.Screen
+          name="auth/onboarding"
+          options={{
+            title: 'Instructor Login',
+            headerStyle: { backgroundColor: '#ffffff' },
+            headerShadowVisible: false,
+            headerTintColor: '#0f172a',
+            headerTitleStyle: { color: '#0f172a', fontWeight: '700' },
+          }}
+        />
+        <Stack.Screen name="auth/reset" options={{ title: 'Reset Password', headerShown: false }} />
+        <Stack.Screen name="attendance" options={{ title: 'Attendance' }} />
         <Stack.Screen name="today" options={{ title: 'Today' }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
