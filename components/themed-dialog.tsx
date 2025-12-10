@@ -12,7 +12,7 @@ export type DialogButton = {
 export type ThemedDialogProps = {
   visible: boolean;
   title?: string;
-  message?: string;
+  message?: React.ReactNode;
   buttons?: DialogButton[];
   onClose?: () => void;
   allowBackdropClose?: boolean;
@@ -61,7 +61,11 @@ const ThemedDialog = ({
             end={{ x: 1, y: 1 }}
             style={styles.card}>
             {title ? <Text style={styles.title}>{title}</Text> : null}
-            {message ? <Text style={styles.message}>{message}</Text> : null}
+            {message
+              ? typeof message === 'string'
+                ? <Text style={styles.message}>{message}</Text>
+                : message
+              : null}
             <View style={styles.buttonsRow}>
               <View style={styles.buttonsLeft}>
                 {leftButtons.map((button, idx) => (
@@ -119,7 +123,9 @@ const ThemedDialog = ({
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    top: 30,
+    bottom: -30,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',

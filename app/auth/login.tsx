@@ -1,7 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Image,
@@ -14,7 +15,7 @@ import {
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import ThemedDialog from '@/components/themed-dialog';
+import ThemedDialog, { DialogButton } from '@/components/themed-dialog';
 import { supabase } from '@/lib/supabase';
 
 type Branch = {
@@ -32,24 +33,34 @@ type Branch = {
 const lastClaimKey = 'last-attendance-claim';
 
 export default function LoginScreen() {
-  const [identifier, setIdentifier] = useState('');
+  const params = useLocalSearchParams<{ email?: string }>();
+  const [identifier, setIdentifier] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [showBranchList, setShowBranchList] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showBranchDetails, setShowBranchDetails] = useState(false);
-  const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string; refocusIdentifier?: boolean }>({
+  const [dialog, setDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    refocusIdentifier?: boolean;
+    buttons?: DialogButton[];
+  }>({
     visible: false,
     title: '',
     message: '',
+    buttons: undefined,
   });
   const [verifying, setVerifying] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<'idle' | 'match' | 'mismatch' | 'error'>('idle');
+  const [showPassword, setShowPassword] = useState(false);
 
   const identifierRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const checkRunRef = useRef(0);
+  const prefilledEmailVerifiedRef = useRef(false);
 
   const isEmail = useMemo(() => identifier.trim().includes('@'), [identifier]);
   const selectedBranch = useMemo(
@@ -91,13 +102,50 @@ export default function LoginScreen() {
   }, []);
 
   useEffect(() => {
+    if (params.email) {
+      setIdentifier(params.email);
+      prefilledEmailVerifiedRef.current = false;
+    }
+  }, [params.email]);
+
+  useEffect(() => {
     const trimmed = identifier.trim();
     setVerifyStatus('idle');
     setPassword('');
-    if (trimmed) {
-      checkIdentifierAgainstBranch(trimmed, branchId ?? undefined, trimmed.includes('@'));
+    if (trimmed && branchId) {
+      checkIdentifierAgainstBranch(trimmed, branchId, trimmed.includes('@'));
     }
   }, [branchId]);
+
+  // Trigger verification when email is prefilled and branchId becomes available
+  useEffect(() => {
+    if (
+      params.email &&
+      identifier === params.email &&
+      branchId &&
+      branches.length > 0 &&
+      !prefilledEmailVerifiedRef.current
+    ) {
+      const trimmed = identifier.trim();
+      if (trimmed) {
+        prefilledEmailVerifiedRef.current = true;
+        // Small delay to avoid race condition with branchId effect
+        const timer = setTimeout(() => {
+          checkIdentifierAgainstBranch(trimmed, branchId, trimmed.includes('@'));
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [params.email, identifier, branchId, branches.length]);
+
+  useEffect(() => {
+    // When email is prefilled and verification succeeds, focus on password field
+    if (params.email && identifier === params.email && verifyStatus === 'match') {
+      setTimeout(() => {
+        passwordRef.current?.focus();
+      }, 100);
+    }
+  }, [params.email, identifier, verifyStatus]);
 
   const handleIdentifierChange = (text: string) => {
     // Preserve user input while typing; casing handled on blur
@@ -115,13 +163,23 @@ export default function LoginScreen() {
     checkIdentifierAgainstBranch(trimmed, undefined, trimmed.includes('@'));
   };
 
-  const showDialog = (title: string, message: string, opts?: { refocusIdentifier?: boolean }) => {
-    setDialog({ visible: true, title, message, refocusIdentifier: opts?.refocusIdentifier });
+  const showDialog = (
+    title: string,
+    message: string,
+    opts?: { refocusIdentifier?: boolean; buttons?: DialogButton[] }
+  ) => {
+    setDialog({
+      visible: true,
+      title,
+      message,
+      refocusIdentifier: opts?.refocusIdentifier,
+      buttons: opts?.buttons,
+    });
   };
 
   const closeDialog = () => {
     const shouldRefocus = dialog.refocusIdentifier;
-    setDialog({ visible: false, title: '', message: '' });
+    setDialog({ visible: false, title: '', message: '', buttons: undefined });
     if (shouldRefocus) {
       setTimeout(() => identifierRef.current?.focus(), 50);
     }
@@ -160,19 +218,50 @@ export default function LoginScreen() {
           showDialog('Not found', 'Nickname or email not linked to this branch.', { refocusIdentifier: true });
         }
       } else {
-        const { data, error } = await supabase.rpc('nickname_login_email', {
+        // First check if nickname exists in branch
+        const { data: exists, error: existsError } = await supabase.rpc('nickname_exists', {
           p_branch_id: targetBranchId,
           p_nickname: trimmed.toUpperCase(),
         });
-        if (error) throw error;
+        if (existsError) throw existsError;
         if (runId !== checkRunRef.current) return;
-        if (data) {
+        
+        if (!exists) {
+          setVerifyStatus('mismatch');
+          setPassword('');
+          showDialog('Not found', 'Nickname or email not linked to this branch.', { refocusIdentifier: true });
+          return;
+        }
+
+        // If nickname exists, check if it has an email (auth_user_id)
+        const { data: email, error: emailError } = await supabase.rpc('nickname_login_email', {
+          p_branch_id: targetBranchId,
+          p_nickname: trimmed.toUpperCase(),
+        });
+        if (emailError) throw emailError;
+        if (runId !== checkRunRef.current) return;
+        
+        if (email) {
           setVerifyStatus('match');
           setTimeout(() => passwordRef.current?.focus(), 50);
         } else {
           setVerifyStatus('mismatch');
           setPassword('');
-          showDialog('Not found', 'Nickname or email not linked to this branch.', { refocusIdentifier: true });
+          showDialog(
+            'Account setup required',
+            'This nickname exists but is not linked to an account. Please complete onboarding to create your account.',
+            {
+              refocusIdentifier: false,
+              buttons: [
+                {
+                  label: 'Go to Onboarding',
+                  onPress: () => router.push('/auth/onboarding'),
+                  variant: 'primary',
+                },
+                { label: 'Cancel', variant: 'secondary' },
+              ],
+            }
+          );
         }
       }
     } catch (err: any) {
@@ -258,6 +347,7 @@ export default function LoginScreen() {
         visible={dialog.visible}
         title={dialog.title}
         message={dialog.message}
+        buttons={dialog.buttons}
         onClose={closeDialog}
       />
     <LinearGradient colors={['#01A490', '#0f172a']} style={styles.gradient}>
@@ -275,7 +365,7 @@ export default function LoginScreen() {
           keyboardDismissMode="on-drag">
         <View>
           <View style={styles.brandHeader}>
-            <Image source={require('../../assets/images/ymca-logo.png')} style={styles.logo} />
+            <Image source={require('../../assets/images/ymca-logo.v2.png')} style={styles.logo} />
             <View style={styles.brandTextBlock}>
               <Text style={styles.title}>YMCA Login</Text>
               <Text style={styles.branchText}>{headerBranchName}</Text>
@@ -290,6 +380,8 @@ export default function LoginScreen() {
             style={styles.input}
             placeholder="Nickname or email"
             autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
             ref={identifierRef}
             value={identifier}
             onChangeText={handleIdentifierChange}
@@ -368,15 +460,27 @@ export default function LoginScreen() {
           )}
 
           <Text style={styles.sectionLabel}>Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            secureTextEntry
-            ref={passwordRef}
-            editable={verifyStatus === 'match'}
-            value={password}
-            onChangeText={setPassword}
-          />
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Password"
+              secureTextEntry={!showPassword}
+              ref={passwordRef}
+              editable={verifyStatus === 'match'}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <Pressable
+              style={styles.eyeButton}
+              onPress={() => setShowPassword(!showPassword)}
+              hitSlop={8}>
+              <Ionicons
+                name={showPassword ? 'eye-off' : 'eye'}
+                size={20}
+                color="#475569"
+              />
+            </Pressable>
+          </View>
 
         <View style={styles.buttonRow}>
           <Pressable
@@ -391,12 +495,37 @@ export default function LoginScreen() {
           </Pressable>
         </View>
 
-          <Text style={styles.secondaryLink} onPress={() => router.push('/auth/reset')}>
-            Forgot password? Reset with a code
-          </Text>
-          <Text style={styles.secondaryLink} onPress={() => router.push('/auth/onboarding')}>
-            Need a new account? Start onboarding
-          </Text>
+        <Text style={styles.orDivider}>OR</Text>
+
+        <View style={styles.secondaryActionRow}>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.goButton}
+            onPress={() => router.push('/auth/reset')}
+            hitSlop={8}>
+            <Text style={styles.goButtonText}>Go</Text>
+          </Pressable>
+          <Pressable
+            style={styles.secondaryLinkContainer}
+            onPress={() => router.push('/auth/reset')}>
+            <Text style={styles.secondaryLink}>Forgot password? Reset with a code</Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.secondaryActionRow, { marginTop: 19 }]}>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.goButton}
+            onPress={() => router.push('/auth/onboarding')}
+            hitSlop={8}>
+            <Text style={styles.goButtonText}>Go</Text>
+          </Pressable>
+          <Pressable
+            style={styles.secondaryLinkContainer}
+            onPress={() => router.push('/auth/onboarding')}>
+            <Text style={styles.secondaryLink}>Need a new account? Start onboarding</Text>
+          </Pressable>
+        </View>
         </View>
         </KeyboardAwareScrollView>
       </SafeAreaView>
@@ -421,7 +550,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   brandTextBlock: { gap: 2 },
-  logo: { width: 56, height: 56 },
+  logo: { width: 56, height: 56, marginTop: -15 },
   title: { fontSize: 26, fontWeight: '800', color: '#fff' },
   branchText: { color: '#f8fafc', fontWeight: '600', fontSize: 16 },
   branchHeaderRow: {
@@ -431,7 +560,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  helper: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
+  helper: { color: '#e2e8f0', fontSize: 14, lineHeight: 20, marginTop: 25 },
   sectionLabel: { color: '#f8fafc', fontWeight: '600', marginTop: 12 },
   input: {
     borderWidth: 1,
@@ -441,6 +570,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 16,
+  },
+  eyeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   branchBox: {
     borderWidth: 1,
@@ -521,6 +668,38 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#0f172a', fontWeight: '700', fontSize: 16 },
-  secondaryLink: { color: '#e2e8f0', textAlign: 'center', marginTop: 8 },
+  orDivider: {
+    color: '#e2e8f0',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  secondaryActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -1,
+    gap: 12,
+  },
+  goButton: {
+    backgroundColor: '#facc15',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    minWidth: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goButtonText: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  secondaryLinkContainer: {
+    flex: 1,
+  },
+  secondaryLink: { color: '#e2e8f0', fontSize: 14 },
 });
 

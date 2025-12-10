@@ -1,7 +1,8 @@
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     BackHandler,
@@ -32,6 +33,7 @@ const DEFAULT_BRANCH_LABEL = 'Of the Greater Rochester Area';
 type BranchOption = { id: string; name: string; isPrimary: boolean };
 
 export default function AttendanceScreen() {
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{ branchId?: string; period?: AttendancePeriod }>();
   const [period, setPeriod] = useState<AttendancePeriod>(params.period ?? 'month');
   const [selectedDay, setSelectedDay] = useState<string>('Monday');
@@ -58,6 +60,45 @@ export default function AttendanceScreen() {
     setDialog({ visible: true, title, message, buttons });
   };
   const closeDialog = () => setDialog({ visible: false, title: '', message: '', buttons: undefined });
+
+  const openCloseAppDialog = useCallback(() => {
+    showDialog(
+      'Close app',
+      'Select Logout to log on as another instructor or just close the app and stay logged in ?',
+      [
+        {
+          label: 'Logout',
+          align: 'left',
+          onPress: async () => {
+            await supabase.auth.signOut();
+            router.replace('/welcome');
+          },
+        },
+        { label: 'No', onPress: closeDialog },
+        { label: 'Yes', onPress: () => BackHandler.exitApp() },
+      ]
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={openCloseAppDialog}
+          style={styles.headerCloseButton}>
+          <View style={styles.headerCloseIconOuter}>
+            <View style={styles.headerCloseIconInner}>
+              <Ionicons name="close" size={16} color="#ef4444" />
+            </View>
+          </View>
+          <Text style={styles.headerCloseText}>Close</Text>
+        </Pressable>
+      ),
+      headerBackVisible: false,
+    });
+  }, [navigation, openCloseAppDialog]);
 
   const subtitle = useMemo(() => {
     if (!resolvedNickname && !resolvedFirstName && !resolvedLastName) return '';
@@ -230,13 +271,13 @@ export default function AttendanceScreen() {
     if (!cs) return null;
     const countValue = headcounts[cs.id] ?? '';
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, dialog.visible && styles.cardDimmed]}>
         <Text style={styles.className}>{cs.classes?.name ?? 'Class'}</Text>
         <Text style={styles.meta}>
           {cs.day_of_week} • {cs.start_time} - {cs.end_time} • {cs.locations?.name ?? 'Location'}
         </Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, dialog.visible && styles.inputDimmed]}
           keyboardType="number-pad"
           placeholder="Headcount"
           value={countValue}
@@ -294,7 +335,7 @@ export default function AttendanceScreen() {
       <LinearGradient colors={['#01A490', '#0f172a']} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.brandHeader}>
-            <Image source={require('../assets/images/ymca-logo.png')} style={styles.brandLogo} />
+            <Image source={require('../assets/images/ymca-logo.v2.png')} style={styles.brandLogo} />
             <View style={styles.brandText}>
               <Text style={styles.title}>YMCA Attendance</Text>
               <Text style={styles.branchText}>{`Branch: ${selectedBranchName || DEFAULT_BRANCH_LABEL}`}</Text>
@@ -340,24 +381,7 @@ export default function AttendanceScreen() {
             accessibilityRole="button"
             hitSlop={10}
             style={styles.closeButton}
-            onPress={() =>
-              showDialog(
-                'Close app',
-                'Select Logout to log on as another instructor or just close the app and stay logged in ?',
-                [
-                  {
-                    label: 'Logout',
-                    align: 'left',
-                    onPress: async () => {
-                      await supabase.auth.signOut();
-                      router.replace('/welcome');
-                    },
-                  },
-                  { label: 'No', onPress: closeDialog },
-                  { label: 'Yes', onPress: () => BackHandler.exitApp() },
-                ]
-              )
-            }>
+            onPress={openCloseAppDialog}>
             <Text style={styles.closeButtonText}>Close</Text>
           </Pressable>
         </View>
@@ -432,6 +456,24 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   closeButtonText: { color: '#0f172a', fontWeight: '700' },
+  headerCloseText: { color: '#0f172a', fontWeight: '700', fontSize: 18 },
+  headerCloseButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerCloseIconOuter: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCloseIconInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   periodButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -457,6 +499,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
+  cardDimmed: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
   className: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
   meta: { color: '#1f2937', fontWeight: '500' },
   input: {
@@ -466,6 +511,11 @@ const styles = StyleSheet.create({
     padding: 10,
     fontSize: 16,
     backgroundColor: '#fff',
+  },
+  inputDimmed: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderColor: 'rgba(255,255,255,0.35)',
+    color: '#f8fafc',
   },
   helper: { color: '#1f2937', fontSize: 13 },
   helperSmall: { color: '#334155', fontSize: 12 },

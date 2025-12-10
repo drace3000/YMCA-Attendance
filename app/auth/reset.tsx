@@ -1,6 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -17,6 +18,11 @@ export default function ResetPasswordScreen() {
   const [sending, setSending] = useState(false);
   const [mode, setMode] = useState<'form' | 'code'>('form');
   const [cooldown, setCooldown] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
+  const codeInputRef = useRef<TextInput>(null);
   const [dialog, setDialog] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false,
     title: '',
@@ -24,7 +30,13 @@ export default function ResetPasswordScreen() {
   });
 
   const showDialog = (title: string, message: string) => setDialog({ visible: true, title, message });
-  const closeDialog = () => setDialog({ visible: false, title: '', message: '' });
+  const closeDialog = () => {
+    if (dialog.title === 'Success') {
+      router.replace(`/auth/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+    } else {
+      setDialog({ visible: false, title: '', message: '' });
+    }
+  };
 
   const sendCode = async () => {
     const trimmed = email.trim().toLowerCase();
@@ -42,6 +54,7 @@ export default function ResetPasswordScreen() {
       if (error) throw error;
       setStatus('A 6-digit code was sent to your email.');
       setMode('code');
+      setCodeVerified(false);
       setCooldown(240);
       const interval = setInterval(() => {
         setCooldown((prev) => {
@@ -64,6 +77,64 @@ export default function ResetPasswordScreen() {
     await sendCode();
   };
 
+  useEffect(() => {
+    const verifyCode = async () => {
+      const trimmedCode = code.trim();
+      if (trimmedCode.length !== 6 || verifyingCode || codeVerified) return;
+
+      setVerifyingCode(true);
+      try {
+        const { error } = await supabase.auth.verifyOtp({
+          email: email.trim().toLowerCase(),
+          token: trimmedCode,
+          type: 'email',
+        });
+        if (error) {
+          setCodeVerified(false);
+          setStatus('Invalid code. Please check and try again.');
+        } else {
+          setCodeVerified(true);
+          setStatus('Code verified. Enter your new password.');
+        }
+      } catch (err: any) {
+        setCodeVerified(false);
+        setStatus(err?.message ?? 'Code verification failed.');
+      } finally {
+        setVerifyingCode(false);
+      }
+    };
+
+    if (mode === 'code' && code.trim().length === 6) {
+      verifyCode();
+    } else {
+      setCodeVerified(false);
+    }
+  }, [code, mode, email]);
+
+  useEffect(() => {
+    if (mode === 'form') {
+      setCodeVerified(false);
+      setCode('');
+      setNewPassword('');
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode === 'code') {
+      setTimeout(() => {
+        codeInputRef.current?.focus();
+      }, 100);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (codeVerified && mode === 'code') {
+      setTimeout(() => {
+        passwordInputRef.current?.focus();
+      }, 100);
+    }
+  }, [codeVerified, mode]);
+
   const verifyAndReset = async () => {
     if (!email.trim() || !email.includes('@')) {
       showDialog('Email required', 'Enter your email address.');
@@ -73,20 +144,17 @@ export default function ResetPasswordScreen() {
       setStatus('Enter the 6-digit code.');
       return;
     }
+    if (!codeVerified) {
+      setStatus('Please wait for code verification.');
+      return;
+    }
     if (!newPassword.trim()) {
       setStatus('Enter a new password.');
       return;
     }
     setLoading(true);
-    setStatus('Verifying code and updating password…');
+    setStatus('Updating password…');
     try {
-      const { error: verifyErr } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: code.trim(),
-        type: 'email',
-      });
-      if (verifyErr) throw verifyErr;
-
       await supabase.auth.updateUser({ password: newPassword.trim() });
       await supabase.auth.signOut();
       showDialog('Success', 'Password updated. Sign in with your new password.');
@@ -94,8 +162,9 @@ export default function ResetPasswordScreen() {
       setMode('form');
       setCode('');
       setNewPassword('');
+      setCodeVerified(false);
     } catch (err: any) {
-      setStatus(err?.message ?? 'Reset failed. Check the code and try again.');
+      setStatus(err?.message ?? 'Reset failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -120,20 +189,33 @@ export default function ResetPasswordScreen() {
             <Text style={styles.title}>Reset password</Text>
             <Text style={styles.helper}>Enter your email to get a 6-digit code. Then enter the code and a new password.</Text>
 
+            {status ? (
+              <Text
+                style={[
+                  styles.statusText,
+                  status === 'A 6-digit code was sent to your email.' && styles.statusTextBold,
+                ]}>
+                {status}
+              </Text>
+            ) : null}
+
             <Text style={styles.label}>Email</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, mode === 'code' && styles.inputDisabled]}
               autoCapitalize="none"
+              autoCorrect={false}
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
+              editable={mode === 'form'}
             />
 
             {mode === 'code' && (
               <>
                 <Text style={styles.label}>6-digit code</Text>
                 <TextInput
+                  ref={codeInputRef}
                   style={styles.input}
                   keyboardType="number-pad"
                   value={code}
@@ -142,13 +224,27 @@ export default function ResetPasswordScreen() {
                   placeholder="123456"
                 />
                 <Text style={styles.label}>New password</Text>
-                <TextInput
-                  style={styles.input}
-                  secureTextEntry
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="New password"
-                />
+                <View style={[styles.passwordContainer, !codeVerified && styles.passwordContainerDisabled]}>
+                  <TextInput
+                    ref={passwordInputRef}
+                    style={[styles.passwordInput, !codeVerified && styles.passwordInputDisabled]}
+                    secureTextEntry={!showPassword}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    placeholder="New password"
+                    editable={codeVerified}
+                  />
+                  <Pressable
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword(!showPassword)}
+                    hitSlop={8}>
+                    <Ionicons
+                      name={showPassword ? 'eye-off' : 'eye'}
+                      size={20}
+                      color="#475569"
+                    />
+                  </Pressable>
+                </View>
               </>
             )}
 
@@ -162,47 +258,15 @@ export default function ResetPasswordScreen() {
                   <Text style={styles.buttonText}>{sending ? 'Sending…' : 'Send code'}</Text>
                 </Pressable>
               ) : (
-                <>
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={8}
-                    style={[styles.button, loading ? styles.buttonDisabled : null]}
-                    onPress={loading ? undefined : verifyAndReset}>
-                    <Text style={styles.buttonText}>{loading ? 'Updating…' : 'Set new password'}</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={8}
-                    style={[styles.button, styles.secondaryButton, (sending || cooldown > 0) ? styles.buttonDisabled : null]}
-                    onPress={sending || cooldown > 0 ? undefined : resendCode}>
-                    <Text style={styles.buttonText}>
-                      {cooldown > 0 ? `Resend code (${cooldown}s)` : 'Resend code'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    hitSlop={8}
-                    style={[styles.button, styles.secondaryButton]}
-                    onPress={() => {
-                      setMode('form');
-                      setCode('');
-                      setNewPassword('');
-                      setStatus('');
-                    }}>
-                    <Text style={styles.buttonText}>Back</Text>
-                  </Pressable>
-                </>
+                <Pressable
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  style={[styles.button, loading ? styles.buttonDisabled : null]}
+                  onPress={loading ? undefined : verifyAndReset}>
+                  <Text style={styles.buttonText}>{loading ? 'Updating…' : 'Set new password'}</Text>
+                </Pressable>
               )}
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={8}
-                style={[styles.button, styles.secondaryButton]}
-                onPress={() => router.replace('/auth/login')}>
-                <Text style={styles.buttonText}>Back to login</Text>
-              </Pressable>
             </View>
-
-            {status ? <Text style={styles.helper}>{status}</Text> : null}
           </KeyboardAwareScrollView>
         </SafeAreaView>
       </LinearGradient>
@@ -217,6 +281,8 @@ const styles = StyleSheet.create({
   container: { padding: 20, gap: 12 },
   title: { fontSize: 24, fontWeight: '800', color: '#f8fafc' },
   helper: { color: '#e2e8f0', fontSize: 14 },
+  statusText: { color: '#e2e8f0', fontSize: 14, textAlign: 'center', marginTop: 8, marginBottom: 4 },
+  statusTextBold: { fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },
   label: { color: '#f8fafc', fontWeight: '600', marginTop: 8 },
   input: {
     borderWidth: 1,
@@ -226,6 +292,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 16,
+  },
+  inputDisabled: {
+    opacity: 0.6,
+    backgroundColor: '#e2e8f0',
+    color: '#94a3b8',
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+  },
+  passwordContainerDisabled: {
+    opacity: 0.6,
+    backgroundColor: '#e2e8f0',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 16,
+  },
+  passwordInputDisabled: {
+    color: '#94a3b8',
+  },
+  eyeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   buttons: { gap: 10, marginTop: 12 },
   button: {

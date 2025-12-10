@@ -215,7 +215,11 @@ export default function OnboardingScreen() {
   const branchLabel = useMemo(() => {
     const found = branches.find((b) => b.id === branchId);
     if (!found) return 'Select branch';
-    return `${found.name ?? 'Branch'}`;
+    const name = found.name ?? 'Branch';
+    if (name.length >= 28) {
+      return `${name.substring(0, 28)}...`;
+    }
+    return name;
   }, [branches, branchId]);
 
   const nicknameDisplay = nickname.trim().toUpperCase();
@@ -561,12 +565,14 @@ export default function OnboardingScreen() {
         {!detailsModalVisible && (
           <>
             <View style={styles.brandHeader}>
-              <Image source={require('../../assets/images/ymca-logo.png')} style={styles.brandLogo} />
+              <Image source={require('../../assets/images/ymca-logo.v2.png')} style={styles.brandLogo} />
               <View style={styles.brandTextBlock}>
                 <Text style={styles.title}>
                   Instructor onboarding
                 </Text>
-                <Text style={styles.branchText}>{selectedBranch?.name ?? 'Of the Greater Rochester Area'}</Text>
+                <Text style={styles.headerBranchText} numberOfLines={1} ellipsizeMode="tail">
+                  {selectedBranch?.name ?? 'Of the Greater Rochester Area'}
+                </Text>
               </View>
             </View>
             {!hideContent && (
@@ -591,7 +597,9 @@ export default function OnboardingScreen() {
         </Text>
         <View style={styles.branchBox}>
           <View style={styles.branchHeaderRow}>
-            <Text style={styles.branchText}>{branchLabel}</Text>
+            <Text style={styles.branchText}>
+              {branchLabel}
+            </Text>
             <Pressable
               style={styles.detailsAction}
               onPress={() =>
@@ -736,6 +744,7 @@ export default function OnboardingScreen() {
               placeholder="Email"
               placeholderTextColor="rgba(248,250,252,0.6)"
               autoCapitalize="none"
+              autoCorrect={false}
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
@@ -802,10 +811,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   brandLogo: { width: 56, height: 56 },
-  brandTextBlock: { gap: 2 },
+  brandTextBlock: { gap: 2, flex: 1, minWidth: 0 },
   title: {
     fontSize: 28,
     fontWeight: '700',
+    color: '#f8fafc',
+  },
+  headerBranchText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#f8fafc',
   },
   sectionLabel: {
@@ -835,18 +849,21 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: 'rgba(15,23,42,0.6)',
     gap: 10,
+    overflow: 'hidden',
   },
   branchHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
     marginTop: 4,
+    gap: 8,
   },
   branchText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#f8fafc',
+    flex: 1,
+    minWidth: 0,
   },
   branchDetails: {
     marginTop: 6,
@@ -867,14 +884,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailsAction: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(56,189,248,0.5)',
     backgroundColor: 'rgba(56,189,248,0.15)',
-    minWidth: 76,
+    minWidth: 70,
     alignItems: 'center',
+    flexShrink: 0,
   },
   detailsActionText: { color: '#38bdf8', fontWeight: '600' },
   toggleListAction: {
