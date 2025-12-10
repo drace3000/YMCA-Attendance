@@ -124,3 +124,7 @@ $$;
 revoke all on function public.claim_instructor from public;
 grant execute on function public.claim_instructor to authenticated;
 
+
+
+
+

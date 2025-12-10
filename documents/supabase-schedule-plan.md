@@ -21,3 +21,7 @@
 - Outline of manager UI flows: clone previous month to new month, adjust sessions/instructors, publish, export.
 
 
+
+
+
+

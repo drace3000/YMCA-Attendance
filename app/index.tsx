@@ -1,34 +1,8 @@
-import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
-
-import { supabase } from '@/lib/supabase';
+import { Redirect } from 'expo-router';
 
 export default function RootRedirect() {
-  useEffect(() => {
-    const bootstrap = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        router.replace('/today');
-      } else {
-        router.replace('/auth/onboarding');
-      }
-    };
-    bootstrap();
-  }, []);
-
-  return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" />
-    </View>
-  );
+  return <Redirect href="/welcome" />;
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+
 

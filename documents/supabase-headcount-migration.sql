@@ -14,3 +14,7 @@ alter table public.class_sessions
 --     or (manager_approved is false or manager_approved is null) and manager_approved_at is null
 --   );
 
+
+
+
+

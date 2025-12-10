@@ -33,3 +33,7 @@ create unique index if not exists instructors_branch_nickname_unique
   on public.instructors(branch_id, nickname)
   where nickname is not null;
 
+
+
+
+

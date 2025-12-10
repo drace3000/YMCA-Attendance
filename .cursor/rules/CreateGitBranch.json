@@ -1,0 +1,20 @@
+{
+    "rule": "CreateGitBranch",
+    "purpose": "Create a new Git branch with timestamp-based naming and sync it with the remote repository.",
+    "instructions": [
+      "Create a new branch with format: YYYY.MM.DD.HHMM-feature-description (e.g., 2025.12.08.1409-feature-cleanup)",
+      "Use git checkout -b <branch-name> to create and switch to the new branch",
+      "Push the branch to remote with tracking: git push -u origin <branch-name>",
+      "Verify branch is synced: git branch --show-current and git branch -r"
+    ],
+    "naming_convention": {
+      "format": "YYYY.MM.DD.HHMM-feature-description",
+      "example": "2025.12.08.1409-feature-cleanup",
+      "description": "Timestamp (year.month.day.hourminute) followed by feature description in kebab-case"
+    },
+    "warnings": [
+      "Ensure you are on the correct base branch before creating a new branch",
+      "Verify remote repository connection before pushing",
+      "Use descriptive branch names that clearly indicate the feature or fix"
+    ]
+  }

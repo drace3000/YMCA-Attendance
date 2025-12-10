@@ -1,0 +1,15 @@
+{
+  "rule": "StartClean",
+  "purpose": "Reset Supabase authentication data without touching instructor or schedule records.",
+  "instructions": [
+    "Export instructors (optional): select id, branch_id, nickname, auth_user_id, last_login_at from public.instructors order by nickname;",
+    "Clear linkages: update public.instructors set auth_user_id = null, last_login_at = null;",
+    "Delete Auth users: delete from auth.users;",
+    "Verify: select count(*) from auth.users; and ensure instructors have null auth_user_id",
+    "Document the reset (optional)."
+  ],
+  "warnings": [
+    "Do NOT delete rows from public.instructors or schedule tables.",
+    "Only authentication linkages and auth.users are being cleared."
+  ]
+}

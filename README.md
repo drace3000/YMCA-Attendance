@@ -48,3 +48,7 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Auth notes (project-specific)
+- Email OTP: onboarding sends a 6-digit code via `signInWithOtp`, then verifies with `verifyOtp` (no deep links needed).
+- Optional congrats email: set `EXPO_PUBLIC_CONGRATS_ENDPOINT` to your server/Edge Function that sends the email. If unset, it is skipped.
