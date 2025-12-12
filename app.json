@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "YMCA-Attendance",
-    "slug": "YMCA-Attendance",
+    "slug": "ymca-attendance",
     "owner": "drace3000",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ymca-attendance-logo.png",
     "scheme": "ymcaattendance",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,6 +13,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.drace3000.ymcaattendance",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -44,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2a4b5dbc-8e58-46c6-bd75-aadc7ac7dd49"
+      }
     }
   }
 }

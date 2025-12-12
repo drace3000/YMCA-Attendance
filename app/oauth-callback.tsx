@@ -6,11 +6,13 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 const pendingClaimContextKey = 'pending-claim-context';
 const lastClaimKey = 'last-attendance-claim';
 
 export default function OAuthCallbackScreen() {
+  useImmersiveNavBar();
   const url = Linking.useURL();
   const [message, setMessage] = useState('Finishing sign-in…');
   const [error, setError] = useState<string | null>(null);

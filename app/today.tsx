@@ -1,5 +1,6 @@
 import ThemedDialog, { DialogButton } from '@/components/themed-dialog';
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
@@ -30,6 +31,7 @@ type SessionRow = {
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function TodayScreen() {
+  useImmersiveNavBar();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);

@@ -4,11 +4,14 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { Platform, StatusBar as RNStatusBar } from 'react-native';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  useImmersiveNavBar();
 
   useEffect(() => {
     const handle = (event: { url: string }) => {
@@ -18,6 +21,11 @@ export default function RootLayout() {
     };
     const sub = Linking.addEventListener('url', handle);
     return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    RNStatusBar.setHidden(true, 'slide');
   }, []);
 
   return (
@@ -38,7 +46,7 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen name="auth/reset" options={{ title: 'Reset Password', headerShown: false }} />
-        <Stack.Screen name="attendance" options={{ title: 'Attendance' }} />
+        <Stack.Screen name="attendance" options={{ title: 'Attendance', headerShown: false }} />
         <Stack.Screen name="today" options={{ title: 'Today' }} />
       </Stack>
       <StatusBar style="auto" />

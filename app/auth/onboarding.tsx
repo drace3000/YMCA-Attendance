@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import ThemedDialog from '@/components/themed-dialog';
 import { checkNicknameExists } from '@/lib/attendance';
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 type Branch = {
   id: string;
@@ -74,6 +75,7 @@ const ActionButton = ({
 };
 
 export default function OnboardingScreen() {
+  useImmersiveNavBar();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [showBranchList, setShowBranchList] = useState(false);
@@ -82,6 +84,7 @@ export default function OnboardingScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nicknameExists, setNicknameExists] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -101,6 +104,7 @@ export default function OnboardingScreen() {
   const claimingRef = useRef(false);
   const nicknameInputRef = useRef<TextInput>(null);
   const firstNameInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<KeyboardAwareScrollView>(null);
   const resendTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   type DialogButton = { label: string; onPress?: () => void; variant?: 'primary' | 'secondary' };
@@ -333,37 +337,95 @@ export default function OnboardingScreen() {
 
   const handleSendOtp = async () => {
     if (!requireFields()) return;
-    if (!nicknameExists) {
-      const nicknameOk = await validateNickname({ showSuccess: false });
-      if (!nicknameOk) return;
-    }
-    if (!email.trim() || !password) {
-      showDialog('Email required', 'Enter your email address and password to continue.');
+    if (!email.trim()) {
+      showDialog('Email required', 'Enter your email address.');
       return;
     }
+    if (!confirmEmail.trim()) {
+      showDialog('Confirm your email', 'Please re-enter your email to confirm.');
+      return;
+    }
+    const emailNormalized = email.trim().toLowerCase();
+    const confirmNormalized = confirmEmail.trim().toLowerCase();
+    if (emailNormalized !== confirmNormalized) {
+      showDialog('Emails do not match', 'Please make sure both email fields match.');
+      return;
+    }
+    // Check duplicate email via RPC before proceeding
     setLoading(true);
     setCodeStatus('');
     try {
-      const emailNormalized = email.trim().toLowerCase();
-
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
-        email: emailNormalized,
-        options: {
-          shouldCreateUser: true,
-        },
-      });
-      if (otpErr) throw otpErr;
-
-      setCodeSentTo(emailNormalized);
-      setMode('code');
-      setCodeStatus('A 6-digit code was sent to your email.');
-      setDetailsModalVisible(false);
-      startResendTimer(240);
+      const { data: dupData, error: dupErr } = await supabase.rpc('check_email_exists', { p_email: emailNormalized });
+      if (dupErr) {
+        showDialog('Email check failed', dupErr.message ?? 'Unable to verify email.');
+        setLoading(false);
+        return;
+      }
+      if (dupData === true) {
+        showDialog('Email already registered', 'Please enter a different email address.');
+        setLoading(false);
+        return;
+      }
     } catch (err: any) {
-      showDialog('Auth error', err.message ?? 'Unable to authenticate');
-    } finally {
+      showDialog('Email check failed', err?.message ?? 'Unable to verify email.');
       setLoading(false);
+      return;
     }
+    if (!nicknameExists) {
+      const nicknameOk = await validateNickname({ showSuccess: false });
+      if (!nicknameOk) {
+        setLoading(false);
+        return;
+      }
+    }
+    if (!email.trim() || !password) {
+      showDialog('Email required', 'Enter your email address and password to continue.');
+      setLoading(false);
+      return;
+    }
+
+    // Confirm email prompt
+    const emailConfirm = emailNormalized;
+    showDialog('Confirm email', `Send code to ${emailConfirm}?`, [
+      {
+        label: 'Yes',
+        onPress: async () => {
+          setDialog({ visible: false, title: '', message: '', buttons: undefined });
+          try {
+            const { error: otpErr } = await supabase.auth.signInWithOtp({
+              email: emailConfirm,
+              options: {
+                shouldCreateUser: true,
+              },
+            });
+            if (otpErr) throw otpErr;
+
+            setCodeSentTo(emailConfirm);
+            setMode('code');
+            setCodeStatus('A 6-digit code was sent to your email.');
+            setDetailsModalVisible(false);
+            startResendTimer(240);
+          } catch (err: any) {
+            showDialog('Auth error', err.message ?? 'Unable to authenticate');
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+      {
+        label: 'No',
+        variant: 'secondary',
+        onPress: () => {
+          setEmail('');
+          setConfirmEmail('');
+          setDialog({ visible: false, title: '', message: '', buttons: undefined });
+          setLoading(false);
+          requestAnimationFrame(() => {
+            emailInputRef.current?.focus();
+          });
+        },
+      },
+    ]);
   };
 
   const handleVerifyCode = async () => {
@@ -740,6 +802,7 @@ export default function OnboardingScreen() {
               onChangeText={setLastName}
             />
             <TextInput
+              ref={emailInputRef}
               style={[styles.input, styles.modalInput]}
               placeholder="Email"
               placeholderTextColor="rgba(248,250,252,0.6)"
@@ -748,6 +811,17 @@ export default function OnboardingScreen() {
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
+              returnKeyType="next"
+            />
+            <TextInput
+              style={[styles.input, styles.modalInput]}
+              placeholder="Confirm email"
+              placeholderTextColor="rgba(248,250,252,0.6)"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              value={confirmEmail}
+              onChangeText={setConfirmEmail}
             />
             <TextInput
               style={[styles.input, styles.modalInput]}

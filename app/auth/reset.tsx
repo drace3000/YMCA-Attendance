@@ -8,8 +8,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import ThemedDialog from '@/components/themed-dialog';
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 export default function ResetPasswordScreen() {
+  useImmersiveNavBar();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');

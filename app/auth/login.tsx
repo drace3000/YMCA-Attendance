@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ThemedDialog, { DialogButton } from '@/components/themed-dialog';
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 type Branch = {
   id: string;
@@ -34,6 +35,7 @@ const lastClaimKey = 'last-attendance-claim';
 
 export default function LoginScreen() {
   const params = useLocalSearchParams<{ email?: string }>();
+  useImmersiveNavBar();
   const [identifier, setIdentifier] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);

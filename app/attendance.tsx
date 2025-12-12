@@ -1,8 +1,9 @@
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import * as NavigationBar from 'expo-navigation-bar';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     BackHandler,
@@ -13,6 +14,8 @@ import {
     Text,
     TextInput,
     View,
+    Platform,
+    StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,13 +30,34 @@ import {
     updateHeadcount,
 } from '@/lib/attendance';
 import { supabase } from '@/lib/supabase';
+import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
 const periodOptions: AttendancePeriod[] = ['month', 'week', 'day'];
 const DEFAULT_BRANCH_LABEL = 'Of the Greater Rochester Area';
 type BranchOption = { id: string; name: string; isPrimary: boolean };
 
+const weekdayRank = dayNames.reduce(
+  (acc, day, index) => {
+    acc[day] = index;
+    return acc;
+  },
+  {} as Record<string, number>
+);
+const FALLBACK_DAY_RANK = dayNames.length + 1;
+const timeToSeconds = (timeStr?: string | null) => {
+  if (!timeStr) return Number.POSITIVE_INFINITY;
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const [, h, m, s] = match;
+  const hours = Number(h);
+  const minutes = Number(m);
+  const seconds = Number(s ?? '0');
+  if ([hours, minutes, seconds].some((n) => Number.isNaN(n))) return Number.POSITIVE_INFINITY;
+  return hours * 3600 + minutes * 60 + seconds;
+};
+
 export default function AttendanceScreen() {
-  const navigation = useNavigation();
+  useImmersiveNavBar();
   const params = useLocalSearchParams<{ branchId?: string; period?: AttendancePeriod }>();
   const [period, setPeriod] = useState<AttendancePeriod>(params.period ?? 'month');
   const [selectedDay, setSelectedDay] = useState<string>('Monday');
@@ -55,6 +79,12 @@ export default function AttendanceScreen() {
     message: '',
     buttons: undefined,
   });
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    RNStatusBar.setHidden(true, 'slide');
+  }, []);
 
   const showDialog = (title: string, message: string, buttons?: DialogButton[]) => {
     setDialog({ visible: true, title, message, buttons });
@@ -79,26 +109,6 @@ export default function AttendanceScreen() {
       ]
     );
   }, []);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerTitle: () => (
-        <Pressable
-          accessibilityRole="button"
-          hitSlop={10}
-          onPress={openCloseAppDialog}
-          style={styles.headerCloseButton}>
-          <View style={styles.headerCloseIconOuter}>
-            <View style={styles.headerCloseIconInner}>
-              <Ionicons name="close" size={16} color="#ef4444" />
-            </View>
-          </View>
-          <Text style={styles.headerCloseText}>Close</Text>
-        </Pressable>
-      ),
-      headerBackVisible: false,
-    });
-  }, [navigation, openCloseAppDialog]);
 
   const subtitle = useMemo(() => {
     if (!resolvedNickname && !resolvedFirstName && !resolvedLastName) return '';
@@ -139,6 +149,17 @@ export default function AttendanceScreen() {
           seen.add(key);
           deduped.push(row);
         }
+      });
+      deduped.sort((a, b) => {
+        const csA = a.class_sessions;
+        const csB = b.class_sessions;
+        const rankA = csA?.day_of_week ? weekdayRank[csA.day_of_week] ?? FALLBACK_DAY_RANK : FALLBACK_DAY_RANK;
+        const rankB = csB?.day_of_week ? weekdayRank[csB.day_of_week] ?? FALLBACK_DAY_RANK : FALLBACK_DAY_RANK;
+        if (rankA !== rankB) return rankA - rankB;
+        const timeA = timeToSeconds(csA?.start_time);
+        const timeB = timeToSeconds(csB?.start_time);
+        if (timeA !== timeB) return timeA - timeB;
+        return 0;
       });
       setSessions(deduped);
       const nextCounts: Record<string, string> = {};
@@ -314,7 +335,7 @@ export default function AttendanceScreen() {
   if (loading) {
     return (
       <LinearGradient colors={['#01A490', '#052e16']} style={styles.gradient}>
-        <SafeAreaView style={[styles.center, styles.shiftUp]}>
+        <SafeAreaView style={styles.center}>
           <ActivityIndicator size="large" color="#facc15" />
         </SafeAreaView>
       </LinearGradient>
@@ -331,14 +352,16 @@ export default function AttendanceScreen() {
         onClose={closeDialog}
       />
     <LinearGradient colors={['#01A490', '#052e16']} style={styles.gradient}>
-      <SafeAreaView style={[styles.safe, styles.shiftUp]}>
+      <SafeAreaView style={styles.safe}>
       <LinearGradient colors={['#01A490', '#0f172a']} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.brandHeader}>
             <Image source={require('../assets/images/ymca-logo.v2.png')} style={styles.brandLogo} />
             <View style={styles.brandText}>
               <Text style={styles.title}>YMCA Attendance</Text>
-              <Text style={styles.branchText}>{`Branch: ${selectedBranchName || DEFAULT_BRANCH_LABEL}`}</Text>
+              <Text style={styles.branchText} numberOfLines={2} ellipsizeMode="tail">
+                {selectedBranchName || DEFAULT_BRANCH_LABEL}
+              </Text>
             </View>
           </View>
         </View>
@@ -379,10 +402,11 @@ export default function AttendanceScreen() {
           </View>
           <Pressable
             accessibilityRole="button"
-            hitSlop={10}
-            style={styles.closeButton}
-            onPress={openCloseAppDialog}>
-            <Text style={styles.closeButtonText}>Close</Text>
+            hitSlop={8}
+            onPress={openCloseAppDialog}
+            style={styles.closeInlineButton}>
+            <Ionicons name="close" size={16} color="#0f172a" />
+            <Text style={styles.closeInlineText}>Close</Text>
           </Pressable>
         </View>
         {period === 'day' ? (
@@ -417,23 +441,23 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   safe: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
-  shiftUp: { marginTop: -20 },
   header: { paddingTop: 16, paddingHorizontal: 16, paddingBottom: 16, gap: 10, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, borderWidth: 1, borderColor: 'rgba(248,250,252,0.16)' },
   headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
   },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: 8,
   },
   brandLogo: { width: 48, height: 48 },
-  brandText: { gap: 2 },
-  title: { fontSize: 26, fontWeight: '700', color: '#f8fafc' },
-  branchText: { color: '#e2e8f0', fontWeight: '600' },
+  brandText: { gap: 2, alignItems: 'flex-start', flexShrink: 1, flex: 1 },
+  title: { fontSize: 26, fontWeight: '700', color: '#f8fafc', textAlign: 'left' },
+  branchText: { color: '#e2e8f0', fontWeight: '600', textAlign: 'left', flexShrink: 1, flexWrap: 'wrap' },
   logout: {
     color: '#0f172a',
     fontWeight: '700',
@@ -443,37 +467,23 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   subtitle: { color: '#f8fafc' },
-  subtitleCentered: { color: '#f8fafc', textAlign: 'center', fontWeight: '700', marginTop: 4, fontSize: 18 },
-  titleRow: { alignItems: 'center', marginTop: 8 },
+  subtitleCentered: { color: '#f8fafc', textAlign: 'center', fontWeight: '700', marginTop: 4, fontSize: 18, width: '100%' },
+  titleRow: { alignItems: 'center', marginTop: 8, width: '100%' },
   notice: { color: '#b91c1c', marginTop: 4 },
-  periodRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 8 },
-  periodButtons: { flexDirection: 'row', gap: 8, flexShrink: 1, flexWrap: 'wrap' },
-  closeButton: {
-    backgroundColor: '#e2e8f0',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    flexShrink: 0,
-  },
-  closeButtonText: { color: '#0f172a', fontWeight: '700' },
-  headerCloseText: { color: '#0f172a', fontWeight: '700', fontSize: 18 },
-  headerCloseButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerCloseIconOuter: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#0f172a',
+  periodRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 8 },
+  periodButtons: { flexDirection: 'row', gap: 8, flexShrink: 1, flexWrap: 'wrap', flex: 1 },
+  closeInlineButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCloseIconInner: {
-    width: 20,
-    height: 20,
+    gap: 6,
+    backgroundColor: '#facc15',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0f172a',
   },
+  closeInlineText: { color: '#0f172a', fontWeight: '800', fontSize: 14 },
   periodButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
