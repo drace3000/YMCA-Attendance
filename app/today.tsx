@@ -29,6 +29,19 @@ type SessionRow = {
 };
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const formatMmDdYyyy = (d: Date) => `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}/${d.getFullYear()}`;
+const formatTime12h = (timeStr?: string | null) => {
+  if (!timeStr) return '';
+  const match = String(timeStr).match(/^(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if (!match) return String(timeStr);
+  const hours24 = Number(match[1]);
+  const minutes = Number(match[2]);
+  if ([hours24, minutes].some((n) => Number.isNaN(n))) return String(timeStr);
+  const suffix = hours24 >= 12 ? 'pm' : 'am';
+  const hours12 = ((hours24 + 11) % 12) + 1;
+  return `${pad2(hours12)}:${pad2(minutes)} ${suffix}`;
+};
 
 export default function TodayScreen() {
   useImmersiveNavBar();
@@ -68,9 +81,10 @@ export default function TodayScreen() {
       setLoading(false);
       return;
     }
-    setSessions(data ?? []);
+    const rows = (data ?? []) as any[];
+    setSessions(rows as any);
     const nextCounts: Record<string, string> = {};
-    (data ?? []).forEach((row) => {
+    rows.forEach((row) => {
       const cs = row.class_sessions;
       if (cs?.id) {
         if (Number.isFinite(cs.headcount as number)) {
@@ -109,12 +123,15 @@ export default function TodayScreen() {
     const cs = item.class_sessions;
     if (!cs) return null;
     const countValue = headcounts[cs.id] ?? '';
+    const todayDateLabel = formatMmDdYyyy(new Date());
+    const startLabel = formatTime12h(cs.start_time);
+    const endLabel = formatTime12h(cs.end_time);
 
     return (
       <View style={styles.card}>
         <Text style={styles.className}>{cs.classes?.name ?? 'Class'}</Text>
         <Text style={styles.meta}>
-          {cs.day_of_week} • {cs.start_time} - {cs.end_time} • {cs.locations?.name ?? 'Location'}
+          {cs.day_of_week} {todayDateLabel} • {startLabel || cs.start_time} - {endLabel || cs.end_time} • {cs.locations?.name ?? 'Location'}
         </Text>
         <TextInput
           style={styles.input}

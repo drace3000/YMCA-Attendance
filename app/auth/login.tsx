@@ -31,6 +31,9 @@ type Branch = {
   description?: string | null;
 };
 
+const ALLIANCE_NAME = 'Alliance of New York State YMCAs';
+const ASSOCIATION_NAME = 'YMCA of Greater Rochester';
+const ASSOCIATION_ID = '25e1812a-29b2-432a-8805-b7e4c6bc5d35';
 const lastClaimKey = 'last-attendance-claim';
 
 export default function LoginScreen() {
@@ -86,16 +89,53 @@ export default function LoginScreen() {
 
   useEffect(() => {
     const loadBranches = async () => {
+      let associationId: string | null = null;
+      try {
+        const { data: alliance, error: allianceError } = await supabase
+          .from('ymca_alliances')
+          .select('id')
+          .eq('name', ALLIANCE_NAME)
+          .maybeSingle();
+        if (allianceError) throw allianceError;
+        if (!alliance?.id) {
+          throw new Error('Alliance not found');
+        }
+        const { data: association, error: associationError } = await supabase
+          .from('ymca_associations')
+          .select('id')
+          .eq('name', ASSOCIATION_NAME)
+          .eq('alliance_id', alliance.id)
+          .maybeSingle();
+        if (associationError) throw associationError;
+        if (!association?.id) {
+          throw new Error('Association not found');
+        }
+        associationId = association.id;
+      } catch (err) {
+        console.warn('Alliance/association lookup failed; using fallback association id.', err);
+        associationId = ASSOCIATION_ID;
+      }
+      if (!associationId) {
+        showDialog('Branch setup error', 'Association not found for this app configuration.');
+        return;
+      }
       const { data, error } = await supabase
-        .from('branches')
+        .from('ymca_branches')
         .select('id, code, name, address, city, state, zip, phone, description')
+        .eq('association_id', associationId)
         .order('name');
       if (error) {
         console.warn('Failed to load branches', error);
+        showDialog('Branch setup error', 'Unable to load branch list for this association.');
         return;
       }
-      setBranches(data ?? []);
-      if (!branchId && data?.length) {
+      if (!data?.length) {
+        setBranches([]);
+        showDialog('No branches available', 'No branches are available for the selected association.');
+        return;
+      }
+      setBranches(data);
+      if (!branchId) {
         const eastside = data.find((b) => b.code === 'eastside_family_ymca');
         setBranchId(eastside?.id ?? data[0].id);
       }

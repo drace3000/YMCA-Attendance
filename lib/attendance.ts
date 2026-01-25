@@ -2,8 +2,9 @@ import { supabase } from './supabase';
 
 export type AttendancePeriod = 'month' | 'week' | 'day';
 
-export const DEFAULT_SCHEDULE_ID = 'a5af3ce8-9729-4073-b399-ee02e3268330'; // September 2025
-export const DEFAULT_EFFECTIVE_MONTH = '2025-09-01';
+// Do NOT hardcode schedule IDs/months. Attendance should resolve these at runtime
+// based on the most recent published/approved schedule in the DB.
+export const FALLBACK_EFFECTIVE_MONTH = '2025-09-01';
 
 export type SessionRow = {
   session_id: string;
@@ -15,6 +16,9 @@ export type SessionRow = {
     id: string;
     schedule_id?: string | null;
     effective_month?: string | null;
+    session_date?: string | null;
+    class_id?: string | null;
+    location_id?: string | null;
     day_of_week: string;
     start_time: string;
     end_time: string;
@@ -87,8 +91,8 @@ export async function fetchInstructorSessions(opts: {
     period,
     instructorId,
     dayOfWeek,
-    scheduleId = DEFAULT_SCHEDULE_ID,
-    effectiveMonth = DEFAULT_EFFECTIVE_MONTH,
+    scheduleId,
+    effectiveMonth = FALLBACK_EFFECTIVE_MONTH,
     branchId,
   } = opts;
 
@@ -101,13 +105,16 @@ export async function fetchInstructorSessions(opts: {
   let query = supabase
     .from('session_instructors')
     .select(
-      `session_id, instructor_id, ${instructorSelect}, class_sessions(id, schedule_id, effective_month, day_of_week, start_time, end_time, headcount, headcount_submitted_at, headcount_updated_at, classes(name), locations(name))`
+      `session_id, instructor_id, ${instructorSelect}, class_sessions(id, schedule_id, effective_month, session_date, class_id, location_id, day_of_week, start_time, end_time, headcount, headcount_submitted_at, headcount_updated_at, classes(name), locations(name))`
     )
     .eq('instructor_id', instructorId)
     .eq('class_sessions.effective_month', effectiveMonth)
-    .eq('class_sessions.schedule_id', scheduleId)
-    .order('day_of_week', { referencedTable: 'class_sessions' })
+    .order('session_date', { referencedTable: 'class_sessions' })
     .order('start_time', { referencedTable: 'class_sessions' });
+
+  if (scheduleId) {
+    query = query.eq('class_sessions.schedule_id', scheduleId);
+  }
 
   if (branchId) {
     query = query.eq('instructors.branch_id', branchId);
@@ -118,7 +125,8 @@ export async function fetchInstructorSessions(opts: {
   }
 
   const { data, error } = await query;
-  return { data: data ?? [], error };
+  // Supabase/PostgREST relationship typing can vary by environment; cast to our app shape.
+  return { data: ((data ?? []) as any) as SessionRow[], error };
 }
 
 export async function updateHeadcount(sessionId: string, headcount: number, submittedAt?: string | null) {

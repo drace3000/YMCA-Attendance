@@ -32,6 +32,11 @@ type Branch = {
   description?: string | null;
 };
 
+const ALLIANCE_NAME = 'Alliance of New York State YMCAs';
+const ASSOCIATION_NAME = 'YMCA of Greater Rochester';
+const ASSOCIATION_ID = '25e1812a-29b2-432a-8805-b7e4c6bc5d35';
+const OTP_LENGTH = 8;
+
 type ActionButtonProps = {
   title: React.ReactNode;
   onPress: () => void;
@@ -86,9 +91,10 @@ export default function OnboardingScreen() {
   const [email, setEmail] = useState('');
   const [confirmEmail, setConfirmEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [nicknameExists, setNicknameExists] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'form' | 'code'>('form');
+  const [mode, setMode] = useState<'form' | 'code' | 'password'>('form');
   const [code, setCode] = useState('');
   const [codeStatus, setCodeStatus] = useState('');
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
@@ -102,6 +108,7 @@ export default function OnboardingScreen() {
     buttons: undefined,
   });
   const claimingRef = useRef(false);
+  const codeInputRef = useRef<TextInput>(null);
   const nicknameInputRef = useRef<TextInput>(null);
   const firstNameInputRef = useRef<TextInput>(null);
   const emailInputRef = useRef<TextInput>(null);
@@ -158,6 +165,24 @@ export default function OnboardingScreen() {
   }, [nickname, branchId]);
 
   useEffect(() => {
+    const loadPendingEmail = async () => {
+      if (!pendingEmailKey) return;
+      try {
+        const pendingRaw = await AsyncStorage.getItem(pendingEmailKey);
+        if (!pendingRaw) return;
+        const pending = JSON.parse(pendingRaw);
+        if (pending?.email && typeof pending.email === 'string') {
+          setEmail(pending.email);
+          setConfirmEmail(pending.email);
+        }
+      } catch (err) {
+        console.warn('Pending email lookup failed', err);
+      }
+    };
+    loadPendingEmail();
+  }, [pendingEmailKey]);
+
+  useEffect(() => {
     if (!hideContent && scrollViewRef.current) {
       // Reset scroll position when content is restored, but don't focus input (no keyboard)
       setTimeout(() => {
@@ -165,6 +190,11 @@ export default function OnboardingScreen() {
       }, 100);
     }
   }, [hideContent]);
+  useEffect(() => {
+    if (mode === 'code') {
+      requestAnimationFrame(() => codeInputRef.current?.focus());
+    }
+  }, [mode]);
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -193,21 +223,58 @@ export default function OnboardingScreen() {
 
   useEffect(() => {
     const loadBranches = async () => {
+      let associationId: string | null = null;
+      try {
+        const { data: alliance, error: allianceError } = await supabase
+          .from('ymca_alliances')
+          .select('id')
+          .eq('name', ALLIANCE_NAME)
+          .maybeSingle();
+        if (allianceError) throw allianceError;
+        if (!alliance?.id) {
+          throw new Error('Alliance not found');
+        }
+        const { data: association, error: associationError } = await supabase
+          .from('ymca_associations')
+          .select('id')
+          .eq('name', ASSOCIATION_NAME)
+          .eq('alliance_id', alliance.id)
+          .maybeSingle();
+        if (associationError) throw associationError;
+        if (!association?.id) {
+          throw new Error('Association not found');
+        }
+        associationId = association.id;
+      } catch (err) {
+        console.warn('Alliance/association lookup failed; using fallback association id.', err);
+        associationId = ASSOCIATION_ID;
+      }
+      if (!associationId) {
+        showDialog('Branch setup error', 'Association not found for this app configuration.');
+        return;
+      }
       const { data, error } = await supabase
-        .from('branches')
-        .select('id, code, name, address, city, state, zip, phone, description');
+        .from('ymca_branches')
+        .select('id, code, name, address, city, state, zip, phone, description')
+        .eq('association_id', associationId)
+        .order('name');
       if (error) {
-        showDialog('Error loading branches', error.message);
+        showDialog('Branch setup error', 'Unable to load branch list for this association.');
+        return;
+      }
+      if (!data?.length) {
+        setBranches([]);
+        showDialog('No branches available', 'No branches are available for the selected association.');
         return;
       }
       setBranches(data);
-      if (data?.length && !branchId) {
+      if (!branchId) {
         const eastside = data.find((b) => b.code === 'eastside_family_ymca');
         setBranchId(eastside?.id ?? data[0].id);
       }
     };
     loadBranches();
-  }, [branchId]);
+  }, []);
 
   const selectedBranch = useMemo(() => branches.find((b) => b.id === branchId), [branches, branchId]);
 
@@ -257,6 +324,15 @@ export default function OnboardingScreen() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const focusCodeInput = () => {
+    codeInputRef.current?.focus();
+  };
+
+  const handleCodeChange = (value: string) => {
+    const sanitized = value.replace(/\D/g, '').slice(0, OTP_LENGTH);
+    setCode(sanitized);
   };
 
   const validateNickname = async (opts?: { showSuccess?: boolean }) => {
@@ -336,24 +412,48 @@ export default function OnboardingScreen() {
   };
 
   const handleSendOtp = async () => {
+    console.warn('Onboarding send OTP attempt', {
+      hasBranchId: Boolean(branchId),
+      nicknameLength: nickname.trim().length,
+      emailLength: email.trim().length,
+      confirmLength: confirmEmail.trim().length,
+      emailHasAt: email.includes('@'),
+      confirmHasAt: confirmEmail.includes('@'),
+      emailsMatch: email.trim().toLowerCase() === confirmEmail.trim().toLowerCase(),
+    });
     if (!requireFields()) return;
+    setPassword('');
+    setConfirmPassword('');
     if (!email.trim()) {
+      console.warn('Onboarding send OTP blocked: missing email', {
+        emailLength: email.trim().length,
+        confirmLength: confirmEmail.trim().length,
+      });
       showDialog('Email required', 'Enter your email address.');
       return;
     }
     if (!confirmEmail.trim()) {
+      console.warn('Onboarding send OTP blocked: missing confirm email', {
+        emailLength: email.trim().length,
+        confirmLength: confirmEmail.trim().length,
+      });
       showDialog('Confirm your email', 'Please re-enter your email to confirm.');
       return;
     }
     const emailNormalized = email.trim().toLowerCase();
     const confirmNormalized = confirmEmail.trim().toLowerCase();
     if (emailNormalized !== confirmNormalized) {
+      console.warn('Onboarding send OTP blocked: email mismatch', {
+        emailLength: emailNormalized.length,
+        confirmLength: confirmNormalized.length,
+      });
       showDialog('Emails do not match', 'Please make sure both email fields match.');
       return;
     }
-    // Check duplicate email via RPC before proceeding
+    // Check if email already exists (allow linking an existing account)
     setLoading(true);
     setCodeStatus('');
+    let shouldCreateUser = true;
     try {
       const { data: dupData, error: dupErr } = await supabase.rpc('check_email_exists', { p_email: emailNormalized });
       if (dupErr) {
@@ -361,11 +461,7 @@ export default function OnboardingScreen() {
         setLoading(false);
         return;
       }
-      if (dupData === true) {
-        showDialog('Email already registered', 'Please enter a different email address.');
-        setLoading(false);
-        return;
-      }
+      shouldCreateUser = dupData !== true;
     } catch (err: any) {
       showDialog('Email check failed', err?.message ?? 'Unable to verify email.');
       setLoading(false);
@@ -378,11 +474,6 @@ export default function OnboardingScreen() {
         return;
       }
     }
-    if (!email.trim() || !password) {
-      showDialog('Email required', 'Enter your email address and password to continue.');
-      setLoading(false);
-      return;
-    }
 
     // Confirm email prompt
     const emailConfirm = emailNormalized;
@@ -391,18 +482,38 @@ export default function OnboardingScreen() {
         label: 'Yes',
         onPress: async () => {
           setDialog({ visible: false, title: '', message: '', buttons: undefined });
+          if (pendingEmailKey) {
+            try {
+              await AsyncStorage.setItem(
+                pendingEmailKey,
+                JSON.stringify({
+                  email: emailConfirm,
+                  branchId,
+                  nickname: nickname.trim(),
+                  firstName: firstName.trim() || null,
+                  lastName: lastName.trim() || null,
+                })
+              );
+            } catch (err) {
+              console.warn('Failed to store pending email', err);
+            }
+          }
           try {
             const { error: otpErr } = await supabase.auth.signInWithOtp({
               email: emailConfirm,
               options: {
-                shouldCreateUser: true,
+                shouldCreateUser,
               },
             });
             if (otpErr) throw otpErr;
 
             setCodeSentTo(emailConfirm);
             setMode('code');
-            setCodeStatus('A 6-digit code was sent to your email.');
+            setCodeStatus(
+              shouldCreateUser
+                ? 'An 8-digit code was sent to your email.'
+                : 'An 8-digit code was sent to your email. This will link your existing account to your nickname.'
+            );
             setDetailsModalVisible(false);
             startResendTimer(240);
           } catch (err: any) {
@@ -430,7 +541,11 @@ export default function OnboardingScreen() {
 
   const handleVerifyCode = async () => {
     if (!code.trim()) {
-      setCodeStatus('Enter the 6-digit code.');
+      setCodeStatus(`Enter the ${OTP_LENGTH}-digit code.`);
+      return;
+    }
+    if (code.trim().length !== OTP_LENGTH) {
+      setCodeStatus(`Enter the ${OTP_LENGTH}-digit code.`);
       return;
     }
     if (!codeSentTo) {
@@ -459,8 +574,37 @@ export default function OnboardingScreen() {
 
       // Inform user code was accepted; proceed to complete onboarding.
       showDialog('Code accepted', 'Completing sign-in…');
+      setMode('password');
+      setCodeStatus('Code verified. Set your password to finish.');
+    } catch (err: any) {
+      console.warn('OTP verify failed', err);
+      setCodeStatus(err?.message ?? 'Verification failed. Check the code and try again.');
+      showDialog('Verification failed', err?.message ?? 'Check the code and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (!password.trim()) {
+      showDialog('Password required', 'Enter a password to continue.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      showDialog('Passwords do not match', 'Please confirm the same password.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+      const userId = sessionData.session?.user?.id;
+      if (!userId) throw new Error('No session after code verification.');
+
+      const { error: updateErr } = await supabase.auth.updateUser({ password: password.trim() });
+      if (updateErr) throw updateErr;
+
       await completeOnboarding(userId);
-      setCodeStatus('Verified and signed in.');
       // Try to send a congrats email via an Edge Function if configured.
       try {
         if (congratsEndpoint && codeSentTo) {
@@ -478,9 +622,7 @@ export default function OnboardingScreen() {
       }
       showDialog('Success', 'You are signed in.');
     } catch (err: any) {
-      console.warn('OTP verify failed', err);
-      setCodeStatus(err?.message ?? 'Verification failed. Check the code and try again.');
-      showDialog('Verification failed', err?.message ?? 'Check the code and try again.');
+      showDialog('Password setup failed', err?.message ?? 'Unable to set password.');
     } finally {
       setLoading(false);
     }
@@ -569,19 +711,46 @@ export default function OnboardingScreen() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag">
             <View style={styles.codeScreenHeader}>
-              <Text style={styles.title}>Enter 6-digit code</Text>
+              <Text style={styles.title}>Enter 8-digit code</Text>
               <Text style={styles.helper}>
                 We sent a code to {codeSentTo ?? 'your email'}. You have up to 4 minutes to enter it.
               </Text>
             </View>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              placeholder="123456"
-              value={code}
-              onChangeText={setCode}
-              maxLength={6}
-            />
+            <View style={styles.otpInputWrap}>
+              <Pressable onPressIn={focusCodeInput} style={styles.otpPressable}>
+                <View style={styles.otpRow}>
+                  {Array.from({ length: OTP_LENGTH }).map((_, idx) => {
+                    const isFilled = code.length > idx;
+                    const isActive = idx === Math.min(code.length, OTP_LENGTH - 1);
+                    return (
+                      <View
+                        key={idx}
+                        style={[
+                          styles.otpCell,
+                          isFilled ? styles.otpCellFilled : null,
+                          isActive ? styles.otpCellActive : null,
+                        ]}>
+                        <Text style={styles.otpDigit}>{code[idx] ?? ''}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </Pressable>
+              <TextInput
+                ref={codeInputRef}
+                style={styles.otpHiddenInput}
+                pointerEvents="none"
+                keyboardType="number-pad"
+                value={code}
+                onChangeText={handleCodeChange}
+                maxLength={OTP_LENGTH}
+                autoFocus
+                caretHidden
+                selectionColor="transparent"
+                textContentType="oneTimeCode"
+                importantForAutofill="yes"
+              />
+            </View>
             <View style={styles.buttonRow}>
               <ActionButton title="Verify code" onPress={handleVerifyCode} disabled={loading} />
               <ActionButton
@@ -601,10 +770,73 @@ export default function OnboardingScreen() {
                   setCode('');
                   setCodeStatus('');
                   setResendCooldown(0);
+                  setPassword('');
+                  setConfirmPassword('');
                   if (resendTimerRef.current) {
                     clearInterval(resendTimerRef.current);
                     resendTimerRef.current = null;
                   }
+                }}
+              />
+            </View>
+          </KeyboardAwareScrollView>
+          <ThemedDialog
+            visible={dialog.visible}
+            title={dialog.title}
+            message={dialog.message}
+            buttons={dialog.buttons}
+            onClose={() => closeDialog()}
+          />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  if (mode === 'password') {
+    return (
+      <LinearGradient colors={['#01A490', '#0f172a']} style={styles.gradient}>
+        <SafeAreaView style={styles.safe}>
+          <KeyboardAwareScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scrollContent}
+            enableOnAndroid
+            enableAutomaticScroll
+            extraScrollHeight={100}
+            extraHeight={100}
+            keyboardOpeningTime={0}
+            enableResetScrollToCoords={false}
+            scrollToOverflowEnabled={true}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag">
+            <View style={styles.codeScreenHeader}>
+              <Text style={styles.title}>Create a password</Text>
+              <Text style={styles.helper}>
+                Your code is verified. Set a password to finish creating your account.
+              </Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm password"
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+            <View style={styles.buttonRow}>
+              <ActionButton title="Finish sign-up" onPress={handleSetPassword} disabled={loading} />
+              <ActionButton
+                title="Back"
+                variant="secondary"
+                onPress={() => {
+                  setMode('code');
+                  setPassword('');
+                  setConfirmPassword('');
                 }}
               />
             </View>
@@ -823,14 +1055,6 @@ export default function OnboardingScreen() {
               value={confirmEmail}
               onChangeText={setConfirmEmail}
             />
-            <TextInput
-              style={[styles.input, styles.modalInput]}
-              placeholder="Password (optional, set after code)"
-              placeholderTextColor="rgba(248,250,252,0.6)"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
             <View style={styles.detailsButtons}>
               <Pressable
                 style={[
@@ -840,7 +1064,7 @@ export default function OnboardingScreen() {
                 disabled={loading}
                 onPress={handleSendOtp}>
                 <Text style={styles.detailsPrimaryText}>
-                  {loading ? 'Processing…' : 'Send 6-digit code'}
+                  {loading ? 'Processing…' : 'Send 8-digit code'}
                 </Text>
               </Pressable>
               <Pressable
@@ -1145,6 +1369,49 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   detailsSecondaryText: { color: '#a7f3d0', fontWeight: '600' },
+  codeScreenHeader: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  otpPressable: {
+    paddingVertical: 2,
+  },
+  otpInputWrap: {
+    marginTop: 8,
+    marginBottom: 4,
+    position: 'relative',
+  },
+  otpRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  otpCell: {
+    flex: 1,
+    height: 60,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(15,23,42,0.25)',
+    backgroundColor: 'rgba(248,250,252,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpCellFilled: {
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+  },
+  otpCellActive: {
+    borderColor: '#0f172a',
+  },
+  otpDigit: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  otpHiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+  },
   codeBox: {
     marginTop: 12,
     padding: 12,

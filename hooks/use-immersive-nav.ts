@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Platform, StatusBar as RNStatusBar } from 'react-native';
+import Constants from 'expo-constants';
 import * as NavigationBar from 'expo-navigation-bar';
 import { useFocusEffect } from 'expo-router';
 
@@ -11,6 +12,10 @@ import { useFocusEffect } from 'expo-router';
 export function useImmersiveNavBar() {
   const hideBars = useCallback(() => {
     if (Platform.OS !== 'android') return;
+    const canSetBehavior = Constants.appOwnership !== 'expo';
+    if (canSetBehavior) {
+      NavigationBar.setBehaviorAsync('inset-swipe').catch(() => {});
+    }
     NavigationBar.setVisibilityAsync('hidden').catch(() => {});
     RNStatusBar.setHidden(true, 'slide');
   }, []);

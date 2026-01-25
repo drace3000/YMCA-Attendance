@@ -16,3 +16,9 @@ revoke all on function public.check_email_exists(text) from public;
 grant execute on function public.check_email_exists(text) to anon, authenticated;
 
 
+
+
+
+
+
+

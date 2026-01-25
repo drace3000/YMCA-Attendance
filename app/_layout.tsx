@@ -49,7 +49,7 @@ export default function RootLayout() {
         <Stack.Screen name="attendance" options={{ title: 'Attendance', headerShown: false }} />
         <Stack.Screen name="today" options={{ title: 'Today' }} />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style="auto" hidden={Platform.OS === 'android'} />
     </ThemeProvider>
   );
 }

@@ -19,3 +19,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce',
   },
 });
+
+// Some tables (e.g. `classes`, `locations`) are readable under RLS for the `anon` role
+// but not for `authenticated`. When a user is signed in, the default client includes
+// the auth token and queries run as `authenticated`, which can cause embedded lookups
+// to return null even though the rows exist. This "public" client intentionally does
+// not persist or attach a user session so it runs as `anon`.
+export const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});

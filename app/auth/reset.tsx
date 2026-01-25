@@ -10,6 +10,8 @@ import ThemedDialog from '@/components/themed-dialog';
 import { supabase } from '@/lib/supabase';
 import { useImmersiveNavBar } from '@/hooks/use-immersive-nav';
 
+const OTP_LENGTH = 8;
+
 export default function ResetPasswordScreen() {
   useImmersiveNavBar();
   const [email, setEmail] = useState('');
@@ -30,6 +32,8 @@ export default function ResetPasswordScreen() {
     title: '',
     message: '',
   });
+  const isFormMode = mode === 'form';
+  const isCodeMode = mode === 'code';
 
   const showDialog = (title: string, message: string) => setDialog({ visible: true, title, message });
   const closeDialog = () => {
@@ -38,6 +42,15 @@ export default function ResetPasswordScreen() {
     } else {
       setDialog({ visible: false, title: '', message: '' });
     }
+  };
+
+  const focusCodeInput = () => {
+    codeInputRef.current?.focus();
+  };
+
+  const handleCodeChange = (value: string) => {
+    const sanitized = value.replace(/\D/g, '').slice(0, OTP_LENGTH);
+    setCode(sanitized);
   };
 
   const sendCode = async () => {
@@ -54,7 +67,7 @@ export default function ResetPasswordScreen() {
         options: { shouldCreateUser: false },
       });
       if (error) throw error;
-      setStatus('A 6-digit code was sent to your email.');
+      setStatus('An 8-digit code was sent to your email.');
       setMode('code');
       setCodeVerified(false);
       setCooldown(240);
@@ -82,7 +95,7 @@ export default function ResetPasswordScreen() {
   useEffect(() => {
     const verifyCode = async () => {
       const trimmedCode = code.trim();
-      if (trimmedCode.length !== 6 || verifyingCode || codeVerified) return;
+      if (trimmedCode.length !== OTP_LENGTH || verifyingCode || codeVerified) return;
 
       setVerifyingCode(true);
       try {
@@ -106,7 +119,7 @@ export default function ResetPasswordScreen() {
       }
     };
 
-    if (mode === 'code' && code.trim().length === 6) {
+    if (mode === 'code' && code.trim().length === OTP_LENGTH) {
       verifyCode();
     } else {
       setCodeVerified(false);
@@ -123,9 +136,7 @@ export default function ResetPasswordScreen() {
 
   useEffect(() => {
     if (mode === 'code') {
-      setTimeout(() => {
-        codeInputRef.current?.focus();
-      }, 100);
+      requestAnimationFrame(() => codeInputRef.current?.focus());
     }
   }, [mode]);
 
@@ -143,7 +154,11 @@ export default function ResetPasswordScreen() {
       return;
     }
     if (!code.trim()) {
-      setStatus('Enter the 6-digit code.');
+      setStatus(`Enter the ${OTP_LENGTH}-digit code.`);
+      return;
+    }
+    if (code.trim().length !== OTP_LENGTH) {
+      setStatus(`Enter the ${OTP_LENGTH}-digit code.`);
       return;
     }
     if (!codeVerified) {
@@ -189,13 +204,15 @@ export default function ResetPasswordScreen() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag">
             <Text style={styles.title}>Reset password</Text>
-            <Text style={styles.helper}>Enter your email to get a 6-digit code. Then enter the code and a new password.</Text>
+            <Text style={styles.helper}>
+              Enter your email to get an 8-digit code. Then enter the code and a new password.
+            </Text>
 
             {status ? (
               <Text
                 style={[
                   styles.statusText,
-                  status === 'A 6-digit code was sent to your email.' && styles.statusTextBold,
+                  status === 'An 8-digit code was sent to your email.' && styles.statusTextBold,
                 ]}>
                 {status}
               </Text>
@@ -203,28 +220,54 @@ export default function ResetPasswordScreen() {
 
             <Text style={styles.label}>Email</Text>
             <TextInput
-              style={[styles.input, mode === 'code' && styles.inputDisabled]}
+              style={[styles.input, isCodeMode && styles.inputDisabled]}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              editable={mode === 'form'}
+              editable={isFormMode}
             />
 
-            {mode === 'code' && (
+            {isCodeMode && (
               <>
-                <Text style={styles.label}>6-digit code</Text>
-                <TextInput
-                  ref={codeInputRef}
-                  style={styles.input}
-                  keyboardType="number-pad"
-                  value={code}
-                  onChangeText={setCode}
-                  maxLength={6}
-                  placeholder="123456"
-                />
+                <Text style={styles.label}>8-digit code</Text>
+                <View style={styles.otpInputWrap}>
+                  <Pressable onPressIn={focusCodeInput} style={styles.otpPressable}>
+                    <View style={styles.otpRow}>
+                      {Array.from({ length: OTP_LENGTH }).map((_, idx) => {
+                        const isFilled = code.length > idx;
+                        const isActive = idx === Math.min(code.length, OTP_LENGTH - 1);
+                        return (
+                          <View
+                            key={idx}
+                            style={[
+                              styles.otpCell,
+                              isFilled ? styles.otpCellFilled : null,
+                              isActive ? styles.otpCellActive : null,
+                            ]}>
+                            <Text style={styles.otpDigit}>{code[idx] ?? ''}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </Pressable>
+                  <TextInput
+                    ref={codeInputRef}
+                    style={styles.otpHiddenInput}
+                    pointerEvents="none"
+                    keyboardType="number-pad"
+                    value={code}
+                    onChangeText={handleCodeChange}
+                    maxLength={OTP_LENGTH}
+                    autoFocus
+                    caretHidden
+                    selectionColor="transparent"
+                    textContentType="oneTimeCode"
+                    importantForAutofill="yes"
+                  />
+                </View>
                 <Text style={styles.label}>New password</Text>
                 <View style={[styles.passwordContainer, !codeVerified && styles.passwordContainerDisabled]}>
                   <TextInput
@@ -251,7 +294,7 @@ export default function ResetPasswordScreen() {
             )}
 
             <View style={styles.buttons}>
-              {mode === 'form' ? (
+              {isFormMode ? (
                 <Pressable
                   accessibilityRole="button"
                   hitSlop={8}
@@ -286,6 +329,45 @@ const styles = StyleSheet.create({
   statusText: { color: '#e2e8f0', fontSize: 14, textAlign: 'center', marginTop: 8, marginBottom: 4 },
   statusTextBold: { fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },
   label: { color: '#f8fafc', fontWeight: '600', marginTop: 8 },
+  otpPressable: {
+    paddingVertical: 2,
+  },
+  otpInputWrap: {
+    marginTop: 8,
+    marginBottom: 4,
+    position: 'relative',
+  },
+  otpRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  otpCell: {
+    flex: 1,
+    height: 58,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(15,23,42,0.25)',
+    backgroundColor: 'rgba(248,250,252,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpCellFilled: {
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+  },
+  otpCellActive: {
+    borderColor: '#0f172a',
+  },
+  otpDigit: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  otpHiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#475569',
